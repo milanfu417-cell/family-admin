@@ -12,11 +12,12 @@ const MAKE_WEBHOOK_URL = "";
 
 // Make.com can write to this file (e.g. via its GitHub module) each time it
 // syncs your Google Calendar, so the dashboard can display the latest status.
+// Expected shape: { lastSynced: ISOString, events: [{ id, title, date: "YYYY-MM-DD", time: "HH:MM" }] }
 const CALENDAR_STATUS_URL = "data/calendar-status.json";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v3";
+const SW_VERSION = "v4";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_STORED_ENTRIES = 50;
@@ -49,33 +50,7 @@ function addEntry(entry) {
 
 function deleteEntry(id) {
   saveEntries(loadEntries().filter((entry) => entry.id !== id));
-  renderRecentEntries();
-  renderCalendarList();
-}
-
-function renderRecentEntries() {
-  const container = document.getElementById("qa-recent");
-  const entries = loadEntries();
-
-  if (!entries.length) {
-    container.innerHTML = "";
-    return;
-  }
-
-  container.innerHTML = entries
-    .map((entry) => {
-      const when = [entry.date, entry.time].filter(Boolean).join(" ");
-      return `
-        <div class="qa-recent-item">
-          <span class="qa-recent-item-content">
-            <span class="badge">${escapeHtml(entry.type)}</span>
-            <span>${escapeHtml(entry.title)}${when ? ` — ${escapeHtml(when)}` : ""}</span>
-          </span>
-          <button type="button" class="delete-btn" data-delete-id="${escapeHtml(entry.id)}" aria-label="Delete ${escapeHtml(entry.title)}">🗑️</button>
-        </div>
-      `;
-    })
-    .join("");
+  renderCalendar();
 }
 
 function setupQuickAddForm() {
@@ -97,10 +72,7 @@ function setupQuickAddForm() {
     };
 
     addEntry(entry);
-    renderRecentEntries();
-    // Re-derives from storage and filters for type "event" internally, so
-    // any Event entry is guaranteed to show up in Calendar Sync right away.
-    renderCalendarList();
+    renderCalendar();
 
     if (MAKE_WEBHOOK_URL) {
       statusEl.textContent = "Sending to Make.com…";
@@ -125,55 +97,154 @@ function setupQuickAddForm() {
 }
 
 let remoteCalendarData = { lastSynced: null, events: [] };
+let calendarCursor = startOfMonth(new Date());
 
-function getLocalCalendarEvents() {
-  return loadEntries()
-    .filter((entry) => entry.type === "event")
-    .map((entry) => ({
-      id: entry.id,
-      title: entry.title,
-      start: [entry.date, entry.time].filter(Boolean).join(" "),
-      local: true,
-    }));
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function renderCalendarList() {
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function parseDateOnly(dateStr) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isPastDate(dateStr) {
+  if (!dateStr) return false;
+  return parseDateOnly(dateStr) < startOfToday();
+}
+
+function getVisibleEvents() {
+  const localEvents = loadEntries()
+    .filter((entry) => entry.type === "event")
+    .map((entry) => ({ id: entry.id, title: entry.title, date: entry.date, time: entry.time, local: true }));
+
+  const remoteEvents = (remoteCalendarData.events || []).map((event) => ({
+    id: event.id || null,
+    title: event.title,
+    date: event.date || null,
+    time: event.time || null,
+    local: false,
+  }));
+
+  // Hide anything dated before today so past events never clutter the view.
+  return [...localEvents, ...remoteEvents].filter((event) => !isPastDate(event.date));
+}
+
+function renderSyncMeta(eventCount) {
   const metaEl = document.getElementById("calendar-sync-meta");
-  const listEl = document.getElementById("calendar-events");
-
-  const localEvents = getLocalCalendarEvents();
-  const allEvents = [...localEvents, ...(remoteCalendarData.events || [])];
-
   if (remoteCalendarData.lastSynced) {
     metaEl.textContent = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
-  } else if (localEvents.length) {
+  } else if (eventCount) {
     metaEl.textContent = "Not synced with Google Calendar yet — showing events added here.";
   } else {
     metaEl.textContent = "Not connected yet.";
   }
+}
 
-  if (allEvents.length) {
-    listEl.innerHTML = allEvents
+function renderEventChip(event) {
+  return `
+    <div class="calendar-event">
+      <span class="calendar-event-title">${escapeHtml(event.title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
+      ${
+        event.local
+          ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderMonthGrid(eventsByDate) {
+  const grid = document.getElementById("calendar-grid");
+  const label = document.getElementById("calendar-month-label");
+
+  label.textContent = calendarCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  const year = calendarCursor.getFullYear();
+  const month = calendarCursor.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+  const todayKey = formatDateKey(startOfToday());
+
+  let html = "";
+  for (let i = 0; i < totalCells; i++) {
+    const dayNumber = i - firstWeekday + 1;
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      html += '<div class="calendar-day calendar-day-outside"></div>';
+      continue;
+    }
+
+    const key = formatDateKey(new Date(year, month, dayNumber));
+    const dayEvents = eventsByDate[key] || [];
+
+    html += `
+      <div class="calendar-day${key === todayKey ? " is-today" : ""}">
+        <span class="calendar-day-number">${dayNumber}</span>
+        <div class="calendar-day-events">${dayEvents.map(renderEventChip).join("")}</div>
+      </div>
+    `;
+  }
+
+  grid.innerHTML = html;
+}
+
+function renderUnscheduled(events) {
+  const container = document.getElementById("calendar-unscheduled");
+
+  if (!events.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="unscheduled-label">No date set</p>
+    ${events
       .map(
         (event) => `
-        <li class="event-item">
-          <span class="event-item-content">
-            ${event.local ? '<span class="badge badge-local">local</span> ' : ""}
-            <span>${escapeHtml(event.title)}${event.start ? ` — ${escapeHtml(event.start)}` : ""}</span>
-          </span>
-          ${
-            event.local
-              ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
-              : ""
-          }
-        </li>
-      `
+      <div class="entry-row">
+        <span class="entry-row-content">
+          ${event.local ? '<span class="badge-local">local</span>' : ""}
+          <span>${escapeHtml(event.title)}</span>
+        </span>
+        ${
+          event.local
+            ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
+            : ""
+        }
+      </div>
+    `
       )
-      .join("");
-  } else {
-    listEl.innerHTML =
-      '<li class="muted">No events synced yet — connect Make.com to pull events from Google Calendar.</li>';
-  }
+      .join("")}
+  `;
+}
+
+function renderCalendar() {
+  const events = getVisibleEvents();
+  const scheduled = events.filter((event) => event.date);
+  const unscheduled = events.filter((event) => !event.date);
+
+  const eventsByDate = {};
+  scheduled.forEach((event) => {
+    (eventsByDate[event.date] ||= []).push(event);
+  });
+
+  renderMonthGrid(eventsByDate);
+  renderUnscheduled(unscheduled);
+  renderSyncMeta(events.length);
 }
 
 async function loadCalendarStatus() {
@@ -184,7 +255,18 @@ async function loadCalendarStatus() {
   } catch {
     remoteCalendarData = { lastSynced: null, events: [] };
   }
-  renderCalendarList();
+  renderCalendar();
+}
+
+function setupCalendarNav() {
+  document.getElementById("cal-prev").addEventListener("click", () => {
+    calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+    renderCalendar();
+  });
+  document.getElementById("cal-next").addEventListener("click", () => {
+    calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+    renderCalendar();
+  });
 }
 
 function setupDeleteDelegation() {
@@ -194,8 +276,8 @@ function setupDeleteDelegation() {
     deleteEntry(button.dataset.deleteId);
   };
 
-  document.getElementById("qa-recent").addEventListener("click", handleDelete);
-  document.getElementById("calendar-events").addEventListener("click", handleDelete);
+  document.getElementById("calendar-grid").addEventListener("click", handleDelete);
+  document.getElementById("calendar-unscheduled").addEventListener("click", handleDelete);
 }
 
 function registerServiceWorker() {
@@ -218,8 +300,8 @@ function registerServiceWorker() {
   });
 }
 
-renderRecentEntries();
 setupQuickAddForm();
+setupCalendarNav();
 setupDeleteDelegation();
 loadCalendarStatus();
 registerServiceWorker();

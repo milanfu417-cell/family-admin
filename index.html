@@ -65,16 +65,24 @@
         <button type="submit" class="btn-primary">Add</button>
         <p class="form-status" id="qa-status" aria-live="polite"></p>
       </form>
-
-      <div class="qa-recent" id="qa-recent"></div>
     </section>
 
-    <section class="card" id="card-calendar">
+    <section class="card card-wide" id="card-calendar">
       <h2>📅 Calendar Sync</h2>
       <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
-      <ul class="list" id="calendar-events">
-        <li class="muted">No events synced yet — connect Make.com to pull events from Google Calendar.</li>
-      </ul>
+
+      <div class="calendar-header">
+        <button type="button" class="calendar-nav-btn" id="cal-prev" aria-label="Previous month">‹</button>
+        <span id="calendar-month-label"></span>
+        <button type="button" class="calendar-nav-btn" id="cal-next" aria-label="Next month">›</button>
+      </div>
+
+      <div class="calendar-weekdays">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+      </div>
+      <div class="calendar-grid" id="calendar-grid"></div>
+
+      <div class="calendar-unscheduled" id="calendar-unscheduled"></div>
     </section>
 
     <section class="card" id="card-chores">
