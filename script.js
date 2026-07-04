@@ -14,6 +14,10 @@ const MAKE_WEBHOOK_URL = "";
 // syncs your Google Calendar, so the dashboard can display the latest status.
 const CALENDAR_STATUS_URL = "data/calendar-status.json";
 
+// Bump this whenever sw.js changes so phones re-fetch it instead of serving
+// a stale cached copy (must match CACHE_NAME's version in sw.js).
+const SW_VERSION = "v2";
+
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_RECENT_ENTRIES = 10;
 
@@ -77,7 +81,15 @@ function setupQuickAddForm() {
 
     saveRecentEntry(entry);
     renderRecentEntries();
-    if (entry.type === "event") renderCalendarList();
+
+    if (entry.type === "event") {
+      localCalendarEvents.unshift({
+        title: entry.title,
+        start: [entry.date, entry.time].filter(Boolean).join(" "),
+        local: true,
+      });
+      renderCalendarList();
+    }
 
     if (MAKE_WEBHOOK_URL) {
       statusEl.textContent = "Sending to Make.com…";
@@ -103,26 +115,26 @@ function setupQuickAddForm() {
 
 let remoteCalendarData = { lastSynced: null, events: [] };
 
-function getLocalCalendarEvents() {
-  return loadRecentEntries()
-    .filter((entry) => entry.type === "event")
-    .map((entry) => ({
-      title: entry.title,
-      start: [entry.date, entry.time].filter(Boolean).join(" "),
-      local: true,
-    }));
-}
+// Explicit in-memory list backing the Calendar Sync DOM section. Seeded from
+// previously saved Quick Add entries, then pushed to directly on submit so
+// new events append to this exact array before every re-render.
+let localCalendarEvents = loadRecentEntries()
+  .filter((entry) => entry.type === "event")
+  .map((entry) => ({
+    title: entry.title,
+    start: [entry.date, entry.time].filter(Boolean).join(" "),
+    local: true,
+  }));
 
 function renderCalendarList() {
   const metaEl = document.getElementById("calendar-sync-meta");
   const listEl = document.getElementById("calendar-events");
 
-  const localEvents = getLocalCalendarEvents();
-  const allEvents = [...localEvents, ...(remoteCalendarData.events || [])];
+  const allEvents = [...localCalendarEvents, ...(remoteCalendarData.events || [])];
 
   if (remoteCalendarData.lastSynced) {
     metaEl.textContent = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
-  } else if (localEvents.length) {
+  } else if (localCalendarEvents.length) {
     metaEl.textContent = "Not synced with Google Calendar yet — showing events added here.";
   } else {
     metaEl.textContent = "Not connected yet.";
@@ -154,8 +166,21 @@ async function loadCalendarStatus() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register(`sw.js?v=${SW_VERSION}`);
+      registration.update();
+    } catch {
+      // ignore
+    }
   });
 }
 

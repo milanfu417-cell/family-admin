@@ -40,6 +40,20 @@ body {
   color: var(--accent);
 }
 
+.version-tag {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  margin-left: 0.4rem;
+}
+
 .subtitle {
   margin: 0.25rem 0 0;
   color: var(--muted);
