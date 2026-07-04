@@ -10,14 +10,19 @@ document.getElementById("today").textContent = new Date().toLocaleDateString(und
 // Leave blank to just save entries locally in the browser.
 const MAKE_WEBHOOK_URL = "";
 
-// Make.com can write to this file (e.g. via its GitHub module) each time it
-// syncs your Google Calendar, so the dashboard can display the latest status.
-// Expected shape: { lastSynced: ISOString, events: [{ id, title, date: "YYYY-MM-DD", time: "HH:MM" }] }
-const CALENDAR_STATUS_URL = "data/calendar-status.json";
+// Public CSV export link for the Google Sheet Make.com writes your synced
+// Google Calendar events into. In the Sheet: Share > "Anyone with the link"
+// can view, then use either:
+//   https://docs.google.com/spreadsheets/d/SHEET_ID/export?format=csv&gid=GID
+// or File > Share > Publish to web > (pick the tab) > CSV > Publish, which
+// gives a  /pub?output=csv  link — that one is the most reliably fetchable
+// from browser JS if the /export link ever hits a CORS error.
+// Required header row (exact column names, any order): Title, Date, Time, Notes
+const CALENDAR_SHEET_CSV_URL = "";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v5";
+const SW_VERSION = "v6";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_STORED_ENTRIES = 50;
@@ -143,6 +148,7 @@ function getVisibleEvents() {
     title: event.title,
     date: event.date || null,
     time: event.time || null,
+    notes: event.notes || null,
     local: false,
   }));
 
@@ -163,7 +169,7 @@ function renderSyncMeta(eventCount) {
 
 function renderEventChip(event) {
   return `
-    <div class="calendar-event">
+    <div class="calendar-event"${event.notes ? ` title="${escapeHtml(event.notes)}"` : ""}>
       <span class="calendar-event-title">${escapeHtml(event.title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
       ${
         event.local
@@ -254,11 +260,115 @@ function renderCalendar() {
   renderSyncMeta(events.length);
 }
 
-async function loadCalendarStatus() {
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      row.push(field);
+      field = "";
+    } else if (char === "\n" || char === "\r") {
+      if (char === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+    } else {
+      field += char;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function normalizeSheetDate(raw) {
+  if (!raw) return null;
+  const value = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const usMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (usMatch) {
+    const [, month, day, year] = usMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : formatDateKey(parsed);
+}
+
+function normalizeSheetTime(raw) {
+  if (!raw) return null;
+  const value = raw.trim();
+  const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)?$/);
+  if (!match) return value;
+
+  let [, hour, minute, meridiem] = match;
+  hour = parseInt(hour, 10);
+  if (meridiem) {
+    const isPm = meridiem.toLowerCase() === "pm";
+    if (isPm && hour !== 12) hour += 12;
+    if (!isPm && hour === 12) hour = 0;
+  }
+  return `${String(hour).padStart(2, "0")}:${minute}`;
+}
+
+function parseSheetEvents(csvText) {
+  const rows = parseCsv(csvText.trim());
+  if (!rows.length) return [];
+
+  const headers = rows[0].map((cell) => cell.trim().toLowerCase());
+  const titleIndex = headers.indexOf("title");
+  if (titleIndex === -1) return [];
+
+  const dateIndex = headers.indexOf("date");
+  const timeIndex = headers.indexOf("time");
+  const notesIndex = headers.indexOf("notes");
+
+  return rows
+    .slice(1)
+    .filter((cells) => cells[titleIndex] && cells[titleIndex].trim())
+    .map((cells, index) => ({
+      id: `sheet-${index}`,
+      title: cells[titleIndex].trim(),
+      date: dateIndex >= 0 ? normalizeSheetDate(cells[dateIndex]) : null,
+      time: timeIndex >= 0 ? normalizeSheetTime(cells[timeIndex]) : null,
+      notes: notesIndex >= 0 ? (cells[notesIndex] || "").trim() : "",
+      local: false,
+    }));
+}
+
+async function loadCalendarEvents() {
+  if (!CALENDAR_SHEET_CSV_URL) {
+    remoteCalendarData = { lastSynced: null, events: [] };
+    renderCalendar();
+    return;
+  }
+
   try {
-    const response = await fetch(CALENDAR_STATUS_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error("status file not found");
-    remoteCalendarData = await response.json();
+    const response = await fetch(CALENDAR_SHEET_CSV_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("sheet fetch failed");
+    const csvText = await response.text();
+    remoteCalendarData = { lastSynced: new Date().toISOString(), events: parseSheetEvents(csvText) };
   } catch {
     remoteCalendarData = { lastSynced: null, events: [] };
   }
@@ -310,5 +420,5 @@ function registerServiceWorker() {
 setupQuickAddForm();
 setupCalendarNav();
 setupDeleteDelegation();
-loadCalendarStatus();
+loadCalendarEvents();
 registerServiceWorker();
