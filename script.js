@@ -18,11 +18,15 @@ const MAKE_WEBHOOK_URL = "";
 // gives a  /pub?output=csv  link — that one is the most reliably fetchable
 // from browser JS if the /export link ever hits a CORS error.
 // Required header row (exact column names, any order): Title, Date, Time, Notes
-const CALENDAR_SHEET_CSV_URL = "";
+// gid=0 assumes the calendar data is on the sheet's first tab. If it's on a
+// different tab, open that tab in the browser and copy the #gid=NNNN number
+// from the URL bar into the gid= param below.
+const CALENDAR_SHEET_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/11Wbdtl829Fs0lkWyuQUnIaq07UD01A_TD_fwxw016sg/export?format=csv&gid=0";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v6";
+const SW_VERSION = "v7";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_STORED_ENTRIES = 50;
