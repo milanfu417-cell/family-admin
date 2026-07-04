@@ -16,10 +16,10 @@ const CALENDAR_STATUS_URL = "data/calendar-status.json";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v2";
+const SW_VERSION = "v3";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
-const MAX_RECENT_ENTRIES = 10;
+const MAX_STORED_ENTRIES = 50;
 
 function escapeHtml(value) {
   const div = document.createElement("div");
@@ -27,7 +27,11 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
-function loadRecentEntries() {
+function generateId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadEntries() {
   try {
     return JSON.parse(localStorage.getItem(QUICK_ADD_STORAGE_KEY)) || [];
   } catch {
@@ -35,14 +39,23 @@ function loadRecentEntries() {
   }
 }
 
-function saveRecentEntry(entry) {
-  const entries = [entry, ...loadRecentEntries()].slice(0, MAX_RECENT_ENTRIES);
+function saveEntries(entries) {
   localStorage.setItem(QUICK_ADD_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function addEntry(entry) {
+  saveEntries([entry, ...loadEntries()].slice(0, MAX_STORED_ENTRIES));
+}
+
+function deleteEntry(id) {
+  saveEntries(loadEntries().filter((entry) => entry.id !== id));
+  renderRecentEntries();
+  renderCalendarList();
 }
 
 function renderRecentEntries() {
   const container = document.getElementById("qa-recent");
-  const entries = loadRecentEntries();
+  const entries = loadEntries();
 
   if (!entries.length) {
     container.innerHTML = "";
@@ -54,8 +67,11 @@ function renderRecentEntries() {
       const when = [entry.date, entry.time].filter(Boolean).join(" ");
       return `
         <div class="qa-recent-item">
-          <span class="badge">${escapeHtml(entry.type)}</span>
-          <span>${escapeHtml(entry.title)}${when ? ` — ${escapeHtml(when)}` : ""}</span>
+          <span class="qa-recent-item-content">
+            <span class="badge">${escapeHtml(entry.type)}</span>
+            <span>${escapeHtml(entry.title)}${when ? ` — ${escapeHtml(when)}` : ""}</span>
+          </span>
+          <button type="button" class="delete-btn" data-delete-id="${escapeHtml(entry.id)}" aria-label="Delete ${escapeHtml(entry.title)}">🗑️</button>
         </div>
       `;
     })
@@ -70,6 +86,7 @@ function setupQuickAddForm() {
     event.preventDefault();
     const formData = new FormData(form);
     const entry = {
+      id: generateId(),
       type: formData.get("type"),
       title: formData.get("title"),
       date: formData.get("date") || null,
@@ -79,17 +96,11 @@ function setupQuickAddForm() {
       createdAt: new Date().toISOString(),
     };
 
-    saveRecentEntry(entry);
+    addEntry(entry);
     renderRecentEntries();
-
-    if (entry.type === "event") {
-      localCalendarEvents.unshift({
-        title: entry.title,
-        start: [entry.date, entry.time].filter(Boolean).join(" "),
-        local: true,
-      });
-      renderCalendarList();
-    }
+    // Re-derives from storage and filters for type "event" internally, so
+    // any Event entry is guaranteed to show up in Calendar Sync right away.
+    renderCalendarList();
 
     if (MAKE_WEBHOOK_URL) {
       statusEl.textContent = "Sending to Make.com…";
@@ -115,26 +126,27 @@ function setupQuickAddForm() {
 
 let remoteCalendarData = { lastSynced: null, events: [] };
 
-// Explicit in-memory list backing the Calendar Sync DOM section. Seeded from
-// previously saved Quick Add entries, then pushed to directly on submit so
-// new events append to this exact array before every re-render.
-let localCalendarEvents = loadRecentEntries()
-  .filter((entry) => entry.type === "event")
-  .map((entry) => ({
-    title: entry.title,
-    start: [entry.date, entry.time].filter(Boolean).join(" "),
-    local: true,
-  }));
+function getLocalCalendarEvents() {
+  return loadEntries()
+    .filter((entry) => entry.type === "event")
+    .map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      start: [entry.date, entry.time].filter(Boolean).join(" "),
+      local: true,
+    }));
+}
 
 function renderCalendarList() {
   const metaEl = document.getElementById("calendar-sync-meta");
   const listEl = document.getElementById("calendar-events");
 
-  const allEvents = [...localCalendarEvents, ...(remoteCalendarData.events || [])];
+  const localEvents = getLocalCalendarEvents();
+  const allEvents = [...localEvents, ...(remoteCalendarData.events || [])];
 
   if (remoteCalendarData.lastSynced) {
     metaEl.textContent = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
-  } else if (localCalendarEvents.length) {
+  } else if (localEvents.length) {
     metaEl.textContent = "Not synced with Google Calendar yet — showing events added here.";
   } else {
     metaEl.textContent = "Not connected yet.";
@@ -143,8 +155,19 @@ function renderCalendarList() {
   if (allEvents.length) {
     listEl.innerHTML = allEvents
       .map(
-        (event) =>
-          `<li>${event.local ? '<span class="badge badge-local">local</span> ' : ""}${escapeHtml(event.title)}${event.start ? ` — ${escapeHtml(event.start)}` : ""}</li>`
+        (event) => `
+        <li class="event-item">
+          <span class="event-item-content">
+            ${event.local ? '<span class="badge badge-local">local</span> ' : ""}
+            <span>${escapeHtml(event.title)}${event.start ? ` — ${escapeHtml(event.start)}` : ""}</span>
+          </span>
+          ${
+            event.local
+              ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
+              : ""
+          }
+        </li>
+      `
       )
       .join("");
   } else {
@@ -162,6 +185,17 @@ async function loadCalendarStatus() {
     remoteCalendarData = { lastSynced: null, events: [] };
   }
   renderCalendarList();
+}
+
+function setupDeleteDelegation() {
+  const handleDelete = (event) => {
+    const button = event.target.closest("[data-delete-id]");
+    if (!button) return;
+    deleteEntry(button.dataset.deleteId);
+  };
+
+  document.getElementById("qa-recent").addEventListener("click", handleDelete);
+  document.getElementById("calendar-events").addEventListener("click", handleDelete);
 }
 
 function registerServiceWorker() {
@@ -186,5 +220,6 @@ function registerServiceWorker() {
 
 renderRecentEntries();
 setupQuickAddForm();
+setupDeleteDelegation();
 loadCalendarStatus();
 registerServiceWorker();

@@ -173,10 +173,18 @@ body {
 
 .qa-recent-item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   padding: 0.35rem 0;
   font-size: 0.9rem;
+}
+
+.qa-recent-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 .qa-recent-item .badge {
@@ -187,6 +195,37 @@ body {
   padding: 0.1rem 0.55rem;
   font-size: 0.7rem;
   text-transform: uppercase;
+}
+
+.event-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.event-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.delete-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+}
+
+.delete-btn:hover,
+.delete-btn:focus-visible {
+  background: var(--border);
 }
 
 .sync-meta {
