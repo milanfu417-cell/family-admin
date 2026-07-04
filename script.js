@@ -77,6 +77,7 @@ function setupQuickAddForm() {
 
     saveRecentEntry(entry);
     renderRecentEntries();
+    if (entry.type === "event") renderCalendarList();
 
     if (MAKE_WEBHOOK_URL) {
       statusEl.textContent = "Sending to Make.com…";
@@ -100,35 +101,65 @@ function setupQuickAddForm() {
   });
 }
 
-async function loadCalendarStatus() {
+let remoteCalendarData = { lastSynced: null, events: [] };
+
+function getLocalCalendarEvents() {
+  return loadRecentEntries()
+    .filter((entry) => entry.type === "event")
+    .map((entry) => ({
+      title: entry.title,
+      start: [entry.date, entry.time].filter(Boolean).join(" "),
+      local: true,
+    }));
+}
+
+function renderCalendarList() {
   const metaEl = document.getElementById("calendar-sync-meta");
   const listEl = document.getElementById("calendar-events");
 
+  const localEvents = getLocalCalendarEvents();
+  const allEvents = [...localEvents, ...(remoteCalendarData.events || [])];
+
+  if (remoteCalendarData.lastSynced) {
+    metaEl.textContent = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
+  } else if (localEvents.length) {
+    metaEl.textContent = "Not synced with Google Calendar yet — showing events added here.";
+  } else {
+    metaEl.textContent = "Not connected yet.";
+  }
+
+  if (allEvents.length) {
+    listEl.innerHTML = allEvents
+      .map(
+        (event) =>
+          `<li>${event.local ? '<span class="badge badge-local">local</span> ' : ""}${escapeHtml(event.title)}${event.start ? ` — ${escapeHtml(event.start)}` : ""}</li>`
+      )
+      .join("");
+  } else {
+    listEl.innerHTML =
+      '<li class="muted">No events synced yet — connect Make.com to pull events from Google Calendar.</li>';
+  }
+}
+
+async function loadCalendarStatus() {
   try {
     const response = await fetch(CALENDAR_STATUS_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("status file not found");
-    const data = await response.json();
-
-    metaEl.textContent = data.lastSynced
-      ? `Last synced ${new Date(data.lastSynced).toLocaleString()}`
-      : "Not synced yet.";
-
-    if (Array.isArray(data.events) && data.events.length) {
-      listEl.innerHTML = data.events
-        .map(
-          (event) =>
-            `<li>${escapeHtml(event.title)}${event.start ? ` — ${escapeHtml(event.start)}` : ""}</li>`
-        )
-        .join("");
-    } else {
-      listEl.innerHTML =
-        '<li class="muted">No events synced yet — connect Make.com to pull events from Google Calendar.</li>';
-    }
+    remoteCalendarData = await response.json();
   } catch {
-    metaEl.textContent = "Not connected yet.";
+    remoteCalendarData = { lastSynced: null, events: [] };
   }
+  renderCalendarList();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
 }
 
 renderRecentEntries();
 setupQuickAddForm();
 loadCalendarStatus();
+registerServiceWorker();
