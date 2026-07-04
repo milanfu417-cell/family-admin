@@ -17,7 +17,7 @@ const CALENDAR_STATUS_URL = "data/calendar-status.json";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v4";
+const SW_VERSION = "v5";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_STORED_ENTRIES = 50;
@@ -59,20 +59,27 @@ function setupQuickAddForm() {
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const entry = {
-      id: generateId(),
-      type: formData.get("type"),
-      title: formData.get("title"),
-      date: formData.get("date") || null,
-      time: formData.get("time") || null,
-      assignee: formData.get("assignee") || null,
-      notes: formData.get("notes") || null,
-      createdAt: new Date().toISOString(),
-    };
 
-    addEntry(entry);
-    renderCalendar();
+    let entry;
+    try {
+      const formData = new FormData(form);
+      entry = {
+        id: generateId(),
+        type: formData.get("type"),
+        title: formData.get("title"),
+        date: formData.get("date") || null,
+        time: formData.get("time") || null,
+        assignee: formData.get("assignee") || null,
+        notes: formData.get("notes") || null,
+        createdAt: new Date().toISOString(),
+      };
+
+      addEntry(entry);
+      renderCalendar();
+    } catch (err) {
+      statusEl.textContent = `Couldn't save: ${err.message}`;
+      return;
+    }
 
     if (MAKE_WEBHOOK_URL) {
       statusEl.textContent = "Sending to Make.com…";
