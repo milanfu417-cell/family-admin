@@ -13,9 +13,58 @@
   </header>
 
   <main class="dashboard">
+    <section class="card card-wide" id="card-quick-add">
+      <h2>➕ Quick Add</h2>
+      <form id="quick-add-form" class="quick-add-form">
+        <div class="form-row">
+          <label for="qa-type">Type</label>
+          <select id="qa-type" name="type">
+            <option value="event">Event</option>
+            <option value="chore">Chore</option>
+            <option value="shopping">Shopping Item</option>
+            <option value="reminder">Reminder</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label for="qa-title">Title</label>
+          <input type="text" id="qa-title" name="title" placeholder="e.g. Dentist appointment" required />
+        </div>
+
+        <div class="form-row form-row-split">
+          <div>
+            <label for="qa-date">Date</label>
+            <input type="date" id="qa-date" name="date" />
+          </div>
+          <div>
+            <label for="qa-time">Time</label>
+            <input type="time" id="qa-time" name="time" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="qa-assignee">Assigned To</label>
+          <input type="text" id="qa-assignee" name="assignee" placeholder="e.g. Mom, Dad, Alex" />
+        </div>
+
+        <div class="form-row">
+          <label for="qa-notes">Notes</label>
+          <textarea id="qa-notes" name="notes" rows="2" placeholder="Optional details"></textarea>
+        </div>
+
+        <button type="submit" class="btn-primary">Add</button>
+        <p class="form-status" id="qa-status" aria-live="polite"></p>
+      </form>
+
+      <div class="qa-recent" id="qa-recent"></div>
+    </section>
+
     <section class="card" id="card-calendar">
-      <h2>📅 Calendar</h2>
-      <p>No upcoming events yet.</p>
+      <h2>📅 Calendar Sync</h2>
+      <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
+      <ul class="list" id="calendar-events">
+        <li class="muted">No events synced yet — connect Make.com to pull events from Google Calendar.</li>
+      </ul>
     </section>
 
     <section class="card" id="card-chores">

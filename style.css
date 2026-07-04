@@ -72,6 +72,115 @@ body {
   padding-left: 1.25rem;
 }
 
+.muted {
+  color: var(--muted);
+}
+
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+.quick-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-row-split {
+  flex-direction: row;
+  gap: 0.75rem;
+}
+
+.form-row-split > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.quick-add-form label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.quick-add-form input,
+.quick-add-form select,
+.quick-add-form textarea {
+  font: inherit;
+  font-size: 16px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.quick-add-form textarea {
+  resize: vertical;
+}
+
+.btn-primary {
+  align-self: flex-start;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.25rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.btn-primary:active {
+  opacity: 0.85;
+}
+
+.form-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.qa-recent {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.qa-recent:empty {
+  display: none;
+}
+
+.qa-recent-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  font-size: 0.9rem;
+}
+
+.qa-recent-item .badge {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.sync-meta {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .app-footer {
   text-align: center;
   padding: 1.5rem 1rem 2rem;
