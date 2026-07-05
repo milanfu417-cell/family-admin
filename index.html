@@ -14,11 +14,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Admin" />
 
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Family Admin <span class="version-tag">v2.1 · Polish</span></h1>
+    <h1>Family Admin <span class="version-tag">v2.2 · Sync</span></h1>
     <p class="subtitle" id="today"></p>
   </header>
 
@@ -115,14 +115,19 @@
             <input type="time" id="sheet-event-time" />
           </label>
         </div>
+        <label class="form-row">
+          Notes (optional)
+          <input type="text" id="sheet-event-notes" placeholder="Optional details" />
+        </label>
         <div class="sheet-actions">
           <button type="button" class="btn-ghost" id="sheet-cancel">Cancel</button>
-          <button type="submit" class="btn-primary">Add Event</button>
+          <button type="submit" class="btn-primary" id="sheet-event-submit">Add Event</button>
         </div>
+        <p class="sheet-status" id="sheet-event-status" aria-live="polite"></p>
       </form>
     </div>
   </div>
 
-  <script src="script.js?v=9"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>

@@ -9,6 +9,12 @@ document.getElementById("today").textContent = new Date().toLocaleDateString(und
 // straight to your Make.com scenario. Leave blank to just save locally.
 const MAKE_WEBHOOK_URL = "";
 
+// Make.com Custom Webhook for bi-directional calendar sync: every "Add
+// Calendar Event" submission POSTs { title, date, time, notes } here so
+// Make.com can file it into Google Calendar. Leave blank to skip syncing
+// and just save the event locally.
+const CALENDAR_EVENT_WEBHOOK_URL = "https://hook.eu1.make.com/rh5fp1wrqsdxkawkt4lwqec74mc8rs1g";
+
 // Public CSV export link for the Google Sheet Make.com writes your synced
 // Google Calendar events into. In the Sheet: Share > "Anyone with the link"
 // can view, then use either:
@@ -25,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v9";
+const SW_VERSION = "v10";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -168,7 +174,41 @@ function setupInlineAdd(toggleId, formId, inputId, type, renderFn) {
   });
 }
 
+// ---------- Toast (temporary success indicator) ----------
+
+let toastTimer = null;
+
+function showToast(message) {
+  let toast = document.getElementById("toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    toast.className = "toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
 // ---------- Floating Action Button + bottom sheet (Calendar Event only) ----------
+
+// Holds the event already saved locally while its Make.com sync is in
+// flight or being retried, so a retry never creates a duplicate entry.
+let pendingEventEntry = null;
+
+function resetEventForm() {
+  const form = document.getElementById("sheet-form-event");
+  const submitBtn = document.getElementById("sheet-event-submit");
+  const statusEl = document.getElementById("sheet-event-status");
+
+  pendingEventEntry = null;
+  form.reset();
+  submitBtn.disabled = false;
+  submitBtn.textContent = "Add Event";
+  statusEl.textContent = "";
+}
 
 function openSheet() {
   document.getElementById("sheet-overlay").classList.add("open");
@@ -176,6 +216,7 @@ function openSheet() {
 
 function closeSheet() {
   document.getElementById("sheet-overlay").classList.remove("open");
+  resetEventForm();
 }
 
 function setupFab() {
@@ -195,26 +236,62 @@ function setupFab() {
 
 function setupEventForm() {
   const form = document.getElementById("sheet-form-event");
+  const submitBtn = document.getElementById("sheet-event-submit");
+  const statusEl = document.getElementById("sheet-event-status");
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const title = document.getElementById("sheet-event-title").value.trim();
-    if (!title) return;
 
-    const entry = {
-      id: generateId(),
-      type: "event",
-      title,
-      date: document.getElementById("sheet-event-date").value || null,
-      time: document.getElementById("sheet-event-time").value || null,
-      createdAt: new Date().toISOString(),
-    };
+    // Build + save locally only on the first attempt; a retry after a
+    // failed sync reuses the same pending entry instead of duplicating it.
+    if (!pendingEventEntry) {
+      const title = document.getElementById("sheet-event-title").value.trim();
+      if (!title) return;
 
-    addEntry(entry);
-    renderCalendar();
-    notifyMake(entry);
-    form.reset();
-    closeSheet();
+      pendingEventEntry = {
+        id: generateId(),
+        type: "event",
+        title,
+        date: document.getElementById("sheet-event-date").value || null,
+        time: document.getElementById("sheet-event-time").value || null,
+        notes: document.getElementById("sheet-event-notes").value.trim() || null,
+        createdAt: new Date().toISOString(),
+      };
+
+      addEntry(pendingEventEntry);
+      renderCalendar();
+    }
+
+    if (!CALENDAR_EVENT_WEBHOOK_URL) {
+      closeSheet();
+      showToast("Event added ✓");
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Syncing…";
+    statusEl.textContent = "";
+
+    try {
+      const response = await fetch(CALENDAR_EVENT_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: pendingEventEntry.title,
+          date: pendingEventEntry.date,
+          time: pendingEventEntry.time,
+          notes: pendingEventEntry.notes,
+        }),
+      });
+      if (!response.ok) throw new Error(`Webhook responded ${response.status}`);
+
+      closeSheet();
+      showToast("Event added · sent to Make.com ✓");
+    } catch {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Retry Sync";
+      statusEl.textContent = "Saved locally — couldn't reach Make.com.";
+    }
   });
 }
 
