@@ -105,8 +105,31 @@ body {
   margin-bottom: 0.4rem;
 }
 
-.tile-heading h2 {
-  margin-bottom: 0.15rem;
+.tile-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tile-collapse-toggle h2 {
+  margin: 0;
+}
+
+.tile-collapse-chevron {
+  color: var(--muted);
+  font-size: 1rem;
+  transition: transform 0.25s ease;
+}
+
+.tile-collapse-toggle[aria-expanded="true"] .tile-collapse-chevron {
+  transform: rotate(180deg);
 }
 
 .tile-list {
@@ -178,12 +201,6 @@ body {
   cursor: pointer;
 }
 
-.btn-link {
-  display: block;
-  text-decoration: none;
-  text-align: center;
-}
-
 /* ---------- Delete button + local badge (shared) ---------- */
 
 .delete-btn {
@@ -230,9 +247,15 @@ body {
 /* ---------- Calendar tile ---------- */
 
 .sync-meta {
-  margin: 0;
+  margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.calendar-body {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
 }
 
 .calendar-header {
@@ -430,38 +453,12 @@ body {
   margin: 0.5rem auto 0.75rem;
 }
 
-.sheet-panel h2 {
+#sheet-form-event h2 {
   margin: 0 0 0.75rem;
   font-size: 1.05rem;
 }
 
-.sheet-choice {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  width: 100%;
-  background: var(--tile-bg-alt);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  padding: 0.85rem 1rem;
-  margin-bottom: 0.6rem;
-  cursor: pointer;
-  text-align: left;
-}
-
-.sheet-choice:active {
-  opacity: 0.8;
-}
-
-.sheet-choice-icon {
-  font-size: 1.2rem;
-}
-
-.sheet-form {
+#sheet-form-event {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;

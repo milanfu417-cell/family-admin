@@ -5,8 +5,8 @@ document.getElementById("today").textContent = new Date().toLocaleDateString(und
   day: "numeric",
 });
 
-// Paste your Make.com "Custom Webhook" URL here to have new events/chores
-// sent straight to your Make.com scenario. Leave blank to just save locally.
+// Paste your Make.com "Custom Webhook" URL here to have new items sent
+// straight to your Make.com scenario. Leave blank to just save locally.
 const MAKE_WEBHOOK_URL = "";
 
 // Public CSV export link for the Google Sheet Make.com writes your synced
@@ -25,10 +25,20 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v8";
+const SW_VERSION = "v9";
 
-const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
-const MAX_STORED_ENTRIES = 50;
+const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
+const SEED_FLAG_KEY = "familyAdminSeeded";
+const MAX_STORED_ENTRIES = 100;
+
+// One-time starter items so every list has *something* deletable in it
+// rather than permanently-fixed placeholder text.
+const SEED_ITEMS = [
+  { type: "chore", title: "Take out the trash" },
+  { type: "chore", title: "Load the dishwasher" },
+  { type: "shopping", title: "Milk" },
+  { type: "shopping", title: "Eggs" },
+];
 
 function escapeHtml(value) {
   const div = document.createElement("div");
@@ -42,24 +52,39 @@ function generateId() {
 
 function loadEntries() {
   try {
-    return JSON.parse(localStorage.getItem(QUICK_ADD_STORAGE_KEY)) || [];
+    return JSON.parse(localStorage.getItem(ENTRIES_STORAGE_KEY)) || [];
   } catch {
     return [];
   }
 }
 
 function saveEntries(entries) {
-  localStorage.setItem(QUICK_ADD_STORAGE_KEY, JSON.stringify(entries));
+  localStorage.setItem(ENTRIES_STORAGE_KEY, JSON.stringify(entries));
 }
 
 function addEntry(entry) {
   saveEntries([entry, ...loadEntries()].slice(0, MAX_STORED_ENTRIES));
 }
 
+function ensureSeeded() {
+  if (localStorage.getItem(SEED_FLAG_KEY)) return;
+  const seeded = SEED_ITEMS.map((item) => ({
+    id: generateId(),
+    type: item.type,
+    title: item.title,
+    createdAt: new Date().toISOString(),
+  }));
+  saveEntries([...loadEntries(), ...seeded]);
+  localStorage.setItem(SEED_FLAG_KEY, "1");
+}
+
 function deleteEntry(id) {
   saveEntries(loadEntries().filter((entry) => entry.id !== id));
   renderCalendar();
   renderChores();
+  renderShopping();
+  renderMeals();
+  renderBudget();
 }
 
 function notifyMake(entry) {
@@ -71,16 +96,81 @@ function notifyMake(entry) {
   }).catch(() => {});
 }
 
-// ---------- Floating Action Button + bottom sheet ----------
-
-function showSheetPanel(id) {
-  document.querySelectorAll(".sheet-panel").forEach((panel) => {
-    panel.classList.toggle("hidden", panel.id !== id);
+function setupDeleteDelegation() {
+  document.querySelector(".dashboard-tiles").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-id]");
+    if (!button) return;
+    deleteEntry(button.dataset.deleteId);
   });
 }
 
+// ---------- Simple list tiles (Chores / Shopping / Meal Plan / Budget) ----------
+
+function getItemsByType(type) {
+  return loadEntries().filter((entry) => entry.type === type);
+}
+
+function renderSimpleList(type, listElId, emptyText) {
+  const list = document.getElementById(listElId);
+  const rows = getItemsByType(type)
+    .map(
+      (item) => `
+      <li class="tile-list-row">
+        <span>${escapeHtml(item.title)}</span>
+        <button type="button" class="delete-btn" data-delete-id="${escapeHtml(item.id)}" aria-label="Delete ${escapeHtml(item.title)}">🗑️</button>
+      </li>
+    `
+    )
+    .join("");
+
+  list.innerHTML = rows || `<li class="muted">${escapeHtml(emptyText)}</li>`;
+}
+
+function renderChores() {
+  renderSimpleList("chore", "chores-list", "No chores yet.");
+}
+
+function renderShopping() {
+  renderSimpleList("shopping", "shopping-list", "Shopping list is empty.");
+}
+
+function renderMeals() {
+  renderSimpleList("meal", "meal-list", "Nothing planned for today.");
+}
+
+function renderBudget() {
+  renderSimpleList("budget", "budget-list", "Track shared family expenses here.");
+}
+
+function setupInlineAdd(toggleId, formId, inputId, type, renderFn) {
+  const toggle = document.getElementById(toggleId);
+  const form = document.getElementById(formId);
+  const input = document.getElementById(inputId);
+
+  toggle.addEventListener("click", () => {
+    form.classList.remove("hidden");
+    toggle.classList.add("hidden");
+    input.focus();
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = input.value.trim();
+    if (!title) return;
+
+    const entry = { id: generateId(), type, title, createdAt: new Date().toISOString() };
+    addEntry(entry);
+    renderFn();
+    notifyMake(entry);
+    form.reset();
+    form.classList.add("hidden");
+    toggle.classList.remove("hidden");
+  });
+}
+
+// ---------- Floating Action Button + bottom sheet (Calendar Event only) ----------
+
 function openSheet() {
-  showSheetPanel("sheet-choices");
   document.getElementById("sheet-overlay").classList.add("open");
 }
 
@@ -92,6 +182,7 @@ function setupFab() {
   const overlay = document.getElementById("sheet-overlay");
 
   document.getElementById("fab-add").addEventListener("click", openSheet);
+  document.getElementById("sheet-cancel").addEventListener("click", closeSheet);
 
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) closeSheet();
@@ -99,14 +190,6 @@ function setupFab() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && overlay.classList.contains("open")) closeSheet();
-  });
-
-  document.querySelectorAll(".sheet-choice").forEach((button) => {
-    button.addEventListener("click", () => showSheetPanel(`sheet-form-${button.dataset.choice}`));
-  });
-
-  document.querySelectorAll("[data-sheet-back]").forEach((button) => {
-    button.addEventListener("click", () => showSheetPanel("sheet-choices"));
   });
 }
 
@@ -135,79 +218,12 @@ function setupEventForm() {
   });
 }
 
-function setupChoreForm() {
-  const form = document.getElementById("sheet-form-chore");
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const title = document.getElementById("sheet-chore-title").value.trim();
-    if (!title) return;
-
-    const entry = { id: generateId(), type: "chore", title, createdAt: new Date().toISOString() };
-    addEntry(entry);
-    renderChores();
-    notifyMake(entry);
-    form.reset();
-    closeSheet();
-  });
-}
-
-// ---------- Chores tile (inline add) ----------
-
-function getLocalChores() {
-  return loadEntries().filter((entry) => entry.type === "chore");
-}
-
-function renderChores() {
-  const list = document.getElementById("chores-list");
-  const dynamicRows = getLocalChores()
-    .map(
-      (chore) => `
-      <li class="tile-list-row">
-        <span>${escapeHtml(chore.title)}</span>
-        <button type="button" class="delete-btn" data-delete-id="${escapeHtml(chore.id)}" aria-label="Delete ${escapeHtml(chore.title)}">🗑️</button>
-      </li>
-    `
-    )
-    .join("");
-
-  list.innerHTML = `
-    <li>Take out the trash</li>
-    <li>Load the dishwasher</li>
-    ${dynamicRows}
-  `;
-}
-
-function setupInlineChoreForm() {
-  const toggle = document.getElementById("chore-add-toggle");
-  const form = document.getElementById("chore-add-form");
-  const input = document.getElementById("chore-add-input");
-
-  toggle.addEventListener("click", () => {
-    form.classList.remove("hidden");
-    toggle.classList.add("hidden");
-    input.focus();
-  });
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const title = input.value.trim();
-    if (!title) return;
-
-    const entry = { id: generateId(), type: "chore", title, createdAt: new Date().toISOString() };
-    addEntry(entry);
-    renderChores();
-    notifyMake(entry);
-    form.reset();
-    form.classList.add("hidden");
-    toggle.classList.remove("hidden");
-  });
-}
-
 // ---------- Calendar Sync tile ----------
 
 let remoteCalendarData = { lastSynced: null, events: [] };
 let calendarCursor = startOfMonth(new Date());
+let calendarExpanded = false;
+let lastEventCount = 0;
 
 function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -236,12 +252,16 @@ function isPastDate(dateStr) {
   return parseDateOnly(dateStr) < startOfToday();
 }
 
-// Some sync sources append a raw ISO timestamp to the title (e.g. an
-// all-day event exported as "School Off - 2026-09-14T16:00:00.000Z") —
-// strip that off so only the human-readable title ever renders.
+// Some sync sources append a raw date or ISO timestamp to the title (e.g.
+// "Natalie Debate - 2026-07-07" or "School Off - 2026-09-14T16:00:00.000Z")
+// — strip that off so only the human-readable title ever renders. Applied
+// both when a synced row is parsed and again right before render, as a
+// defensive double-check.
 function cleanEventTitle(title) {
   if (!title) return title;
-  return title.replace(/\s*[-–—]\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s*$/i, "").trim();
+  return title
+    .replace(/\s*[-–—]\s*\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)?\s*$/i, "")
+    .trim();
 }
 
 function getVisibleEvents() {
@@ -263,23 +283,30 @@ function getVisibleEvents() {
 }
 
 function renderSyncMeta(eventCount) {
+  lastEventCount = eventCount;
   const metaEl = document.getElementById("calendar-sync-meta");
+
+  let statusText;
   if (remoteCalendarData.lastSynced) {
-    metaEl.textContent = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
+    statusText = `Last synced ${new Date(remoteCalendarData.lastSynced).toLocaleString()}`;
   } else if (eventCount) {
-    metaEl.textContent = "Not synced with Google Calendar yet — showing events added here.";
+    statusText = "Not synced with Google Calendar yet";
   } else {
-    metaEl.textContent = "Not connected yet.";
+    statusText = "Not connected yet";
   }
+
+  const hint = calendarExpanded ? "tap to collapse" : "tap to view month grid";
+  metaEl.textContent = `${statusText} · ${hint}`;
 }
 
 function renderEventChip(event) {
+  const title = cleanEventTitle(event.title);
   return `
     <div class="calendar-event"${event.notes ? ` title="${escapeHtml(event.notes)}"` : ""}>
-      <span class="calendar-event-title">${escapeHtml(event.title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
+      <span class="calendar-event-title">${escapeHtml(title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
       ${
         event.local
-          ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
+          ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>`
           : ""
       }
     </div>
@@ -332,21 +359,22 @@ function renderUnscheduled(events) {
   container.innerHTML = `
     <p class="unscheduled-label">No date set</p>
     ${events
-      .map(
-        (event) => `
+      .map((event) => {
+        const title = cleanEventTitle(event.title);
+        return `
       <div class="entry-row">
         <span class="entry-row-content">
           ${event.local ? '<span class="badge-local">local</span>' : ""}
-          <span>${escapeHtml(event.title)}</span>
+          <span>${escapeHtml(title)}</span>
         </span>
         ${
           event.local
-            ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(event.title)}">🗑️</button>`
+            ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>`
             : ""
         }
       </div>
-    `
-      )
+    `;
+      })
       .join("")}
   `;
 }
@@ -364,6 +392,31 @@ function renderCalendar() {
   renderMonthGrid(eventsByDate);
   renderUnscheduled(unscheduled);
   renderSyncMeta(events.length);
+  refreshCalendarBodyHeight();
+}
+
+// ---------- Collapsible calendar body ----------
+
+function refreshCalendarBodyHeight() {
+  if (!calendarExpanded) return;
+  const body = document.getElementById("calendar-body");
+  body.style.maxHeight = `${body.scrollHeight}px`;
+}
+
+function setCalendarExpanded(expanded) {
+  calendarExpanded = expanded;
+  const toggle = document.getElementById("calendar-toggle");
+  const body = document.getElementById("calendar-body");
+
+  toggle.setAttribute("aria-expanded", String(expanded));
+  body.style.maxHeight = expanded ? `${body.scrollHeight}px` : "0px";
+  renderSyncMeta(lastEventCount);
+}
+
+function setupCalendarToggle() {
+  document.getElementById("calendar-toggle").addEventListener("click", () => {
+    setCalendarExpanded(!calendarExpanded);
+  });
 }
 
 function parseCsv(text) {
@@ -492,18 +545,6 @@ function setupCalendarNav() {
   });
 }
 
-function setupDeleteDelegation() {
-  const handleDelete = (event) => {
-    const button = event.target.closest("[data-delete-id]");
-    if (!button) return;
-    deleteEntry(button.dataset.deleteId);
-  };
-
-  document.getElementById("calendar-grid").addEventListener("click", handleDelete);
-  document.getElementById("calendar-unscheduled").addEventListener("click", handleDelete);
-  document.getElementById("chores-list").addEventListener("click", handleDelete);
-}
-
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
@@ -524,12 +565,19 @@ function registerServiceWorker() {
   });
 }
 
+ensureSeeded();
 setupFab();
 setupEventForm();
-setupChoreForm();
-setupInlineChoreForm();
+setupInlineAdd("chore-add-toggle", "chore-add-form", "chore-add-input", "chore", renderChores);
+setupInlineAdd("shopping-add-toggle", "shopping-add-form", "shopping-add-input", "shopping", renderShopping);
+setupInlineAdd("meal-add-toggle", "meal-add-form", "meal-add-input", "meal", renderMeals);
+setupInlineAdd("budget-add-toggle", "budget-add-form", "budget-add-input", "budget", renderBudget);
 setupCalendarNav();
+setupCalendarToggle();
 setupDeleteDelegation();
 renderChores();
+renderShopping();
+renderMeals();
+renderBudget();
 loadCalendarEvents();
 registerServiceWorker();

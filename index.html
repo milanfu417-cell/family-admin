@@ -14,48 +14,44 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Admin" />
 
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Family Admin <span class="version-tag">v2.0 · Tiles</span></h1>
+    <h1>Family Admin <span class="version-tag">v2.1 · Polish</span></h1>
     <p class="subtitle" id="today"></p>
   </header>
 
   <main class="dashboard-tiles">
-    <section class="tile" id="tile-game">
-      <h2>🎮 Mini Game</h2>
-      <a href="draw-to-kick.html" class="btn-primary btn-link">⚽ 3D Football Game</a>
-    </section>
-
     <section class="tile tile-wide" id="tile-calendar">
       <div class="tile-heading">
-        <h2>📅 Calendar Sync</h2>
+        <button type="button" class="tile-collapse-toggle" id="calendar-toggle" aria-expanded="false" aria-controls="calendar-body">
+          <h2>📅 Calendar Sync</h2>
+          <span class="tile-collapse-chevron" aria-hidden="true">⌄</span>
+        </button>
         <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
       </div>
 
-      <div class="calendar-header">
-        <button type="button" class="calendar-nav-btn" id="cal-prev" aria-label="Previous month">‹</button>
-        <span id="calendar-month-label"></span>
-        <button type="button" class="calendar-nav-btn" id="cal-next" aria-label="Next month">›</button>
-      </div>
+      <div class="calendar-body" id="calendar-body">
+        <div class="calendar-header">
+          <button type="button" class="calendar-nav-btn" id="cal-prev" aria-label="Previous month">‹</button>
+          <span id="calendar-month-label"></span>
+          <button type="button" class="calendar-nav-btn" id="cal-next" aria-label="Next month">›</button>
+        </div>
 
-      <div class="calendar-weekdays">
-        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-      </div>
-      <div class="calendar-grid" id="calendar-grid"></div>
+        <div class="calendar-weekdays">
+          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
 
-      <div class="calendar-unscheduled" id="calendar-unscheduled"></div>
+        <div class="calendar-unscheduled" id="calendar-unscheduled"></div>
+      </div>
     </section>
 
     <section class="tile" id="tile-chores">
       <h2>🧹 Chores</h2>
-      <ul class="tile-list" id="chores-list">
-        <li>Take out the trash</li>
-        <li>Load the dishwasher</li>
-      </ul>
-
-      <button type="button" class="inline-add-toggle" id="chore-add-toggle">+ Add Chore</button>
+      <ul class="tile-list" id="chores-list"></ul>
+      <button type="button" class="inline-add-toggle" id="chore-add-toggle">+ Add</button>
       <form class="inline-add-form hidden" id="chore-add-form">
         <input type="text" id="chore-add-input" placeholder="New chore" required />
         <button type="submit" class="btn-icon" aria-label="Save chore">✓</button>
@@ -64,20 +60,32 @@
 
     <section class="tile" id="tile-shopping">
       <h2>🛒 Shopping List</h2>
-      <ul class="tile-list">
-        <li>Milk</li>
-        <li>Eggs</li>
-      </ul>
+      <ul class="tile-list" id="shopping-list"></ul>
+      <button type="button" class="inline-add-toggle" id="shopping-add-toggle">+ Add</button>
+      <form class="inline-add-form hidden" id="shopping-add-form">
+        <input type="text" id="shopping-add-input" placeholder="New item" required />
+        <button type="submit" class="btn-icon" aria-label="Save item">✓</button>
+      </form>
     </section>
 
     <section class="tile" id="tile-meals">
       <h2>🍽️ Meal Plan</h2>
-      <p class="tile-empty">Nothing planned for today.</p>
+      <ul class="tile-list" id="meal-list"></ul>
+      <button type="button" class="inline-add-toggle" id="meal-add-toggle">+ Add</button>
+      <form class="inline-add-form hidden" id="meal-add-form">
+        <input type="text" id="meal-add-input" placeholder="e.g. Tue: Tacos" required />
+        <button type="submit" class="btn-icon" aria-label="Save meal">✓</button>
+      </form>
     </section>
 
     <section class="tile" id="tile-budget">
       <h2>💰 Budget</h2>
-      <p class="tile-empty">Track shared family expenses here.</p>
+      <ul class="tile-list" id="budget-list"></ul>
+      <button type="button" class="inline-add-toggle" id="budget-add-toggle">+ Add</button>
+      <form class="inline-add-form hidden" id="budget-add-form">
+        <input type="text" id="budget-add-input" placeholder="e.g. Groceries: $120" required />
+        <button type="submit" class="btn-icon" aria-label="Save budget item">✓</button>
+      </form>
     </section>
   </main>
 
@@ -85,24 +93,14 @@
     <p>Family Admin Dashboard</p>
   </footer>
 
-  <button type="button" class="fab" id="fab-add" aria-label="Add something">+</button>
+  <button type="button" class="fab" id="fab-add" aria-label="Add calendar event">+</button>
 
   <div class="sheet-overlay" id="sheet-overlay">
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-choices-title">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-form-title">
       <div class="sheet-handle"></div>
 
-      <div class="sheet-panel" id="sheet-choices">
-        <h2 id="sheet-choices-title">Quick Add</h2>
-        <button type="button" class="sheet-choice" data-choice="event">
-          <span class="sheet-choice-icon">📅</span> Add Calendar Event
-        </button>
-        <button type="button" class="sheet-choice" data-choice="chore">
-          <span class="sheet-choice-icon">🧹</span> Add Todo Chore
-        </button>
-      </div>
-
-      <form class="sheet-panel sheet-form hidden" id="sheet-form-event">
-        <h2>📅 Add Calendar Event</h2>
+      <form id="sheet-form-event">
+        <h2 id="sheet-form-title">📅 Add Calendar Event</h2>
         <label class="form-row">
           Title
           <input type="text" id="sheet-event-title" required />
@@ -118,25 +116,13 @@
           </label>
         </div>
         <div class="sheet-actions">
-          <button type="button" class="btn-ghost" data-sheet-back>Back</button>
+          <button type="button" class="btn-ghost" id="sheet-cancel">Cancel</button>
           <button type="submit" class="btn-primary">Add Event</button>
-        </div>
-      </form>
-
-      <form class="sheet-panel sheet-form hidden" id="sheet-form-chore">
-        <h2>🧹 Add Todo Chore</h2>
-        <label class="form-row">
-          Task
-          <input type="text" id="sheet-chore-title" required />
-        </label>
-        <div class="sheet-actions">
-          <button type="button" class="btn-ghost" data-sheet-back>Back</button>
-          <button type="submit" class="btn-primary">Add Chore</button>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="script.js?v=8"></script>
+  <script src="script.js?v=9"></script>
 </body>
 </html>
