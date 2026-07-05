@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v14";
+const SW_VERSION = "v15";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -647,6 +647,36 @@ async function loadCalendarEvents() {
   renderCalendar();
 }
 
+// How often to re-fetch the Sheet while the app is open and visible, so
+// changes made in Google Calendar show up without a manual reload. Paused
+// while the tab/app is backgrounded to avoid wasting battery/network.
+const CALENDAR_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
+
+function setupCalendarAutoRefresh() {
+  let intervalId = null;
+
+  function startPolling() {
+    if (intervalId) return;
+    intervalId = setInterval(loadCalendarEvents, CALENDAR_REFRESH_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      loadCalendarEvents(); // catch up immediately on returning to the app
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  });
+
+  startPolling();
+}
+
 function setupCalendarNav() {
   document.getElementById("cal-prev").addEventListener("click", () => {
     calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
@@ -693,4 +723,5 @@ renderShopping();
 renderMeals();
 renderBudget();
 loadCalendarEvents();
+setupCalendarAutoRefresh();
 registerServiceWorker();

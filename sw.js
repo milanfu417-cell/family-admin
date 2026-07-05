@@ -1,12 +1,12 @@
 // Bump this (and the ?v= query strings in index.html, and SW_VERSION in
 // script.js) together on every deploy — it's what forces phones to drop
 // their old cached copy instead of showing a stale layout.
-const CACHE_NAME = "family-admin-v14";
+const CACHE_NAME = "family-admin-v15";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=14",
-  "./script.js?v=14",
+  "./style.css?v=15",
+  "./script.js?v=15",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
