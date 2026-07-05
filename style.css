@@ -178,6 +178,12 @@ body {
   cursor: pointer;
 }
 
+.btn-link {
+  display: block;
+  text-decoration: none;
+  text-align: center;
+}
+
 /* ---------- Delete button + local badge (shared) ---------- */
 
 .delete-btn {
