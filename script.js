@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v13";
+const SW_VERSION = "v14";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -339,21 +339,11 @@ function startOfToday() {
   return date;
 }
 
-function parseDateOnly(dateStr) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
 function formatDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function isPastDate(dateStr) {
-  if (!dateStr) return false;
-  return parseDateOnly(dateStr) < startOfToday();
 }
 
 // Some sync sources append a raw date or ISO timestamp to the title (e.g.
@@ -385,8 +375,7 @@ function getVisibleEvents() {
       local: false,
     }));
 
-  // Hide anything dated before today so past events never clutter the view.
-  return [...localEvents, ...remoteEvents].filter((event) => !isPastDate(event.date));
+  return [...localEvents, ...remoteEvents];
 }
 
 function renderSyncMeta(eventCount) {
