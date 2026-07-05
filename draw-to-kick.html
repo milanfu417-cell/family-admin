@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Draw to Kick - Penalty Shootout</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a2a12;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  #gameContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #webglCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  #drawCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: env(safe-area-inset-top, 12px) 14px 0 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  #score {
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(4px);
+  }
+
+  #streak {
+    background: rgba(0, 0, 0, 0.45);
+    color: #ffd23f;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 15px;
+    font-weight: 700;
+    backdrop-filter: blur(4px);
+  }
+
+  #instructions {
+    position: absolute;
+    bottom: env(safe-area-inset-bottom, 26px);
+    left: 0;
+    width: 100%;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    font-weight: 500;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    z-index: 5;
+    transition: opacity 0.3s ease;
+  }
+
+  #popup {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+    transition: transform 0.28s cubic-bezier(.34,1.56,.64,1), opacity 0.28s ease;
+  }
+
+  #popup.show {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+
+  #popup .title {
+    font-size: 54px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-shadow: 0 3px 10px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0,0,0,0.4);
+    -webkit-text-stroke: 1.5px rgba(0,0,0,0.35);
+  }
+
+  #popup.goal .title { color: #4ade80; }
+  #popup.save .title { color: #60a5fa; }
+  #popup.miss .title { color: #f87171; }
+
+  #popup .sub {
+    margin-top: 6px;
+    font-size: 16px;
+    color: #fff;
+    font-weight: 600;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  }
+
+  #loading {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: #0a2a12;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    z-index: 20;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #loading .spinner {
+    width: 34px;
+    height: 34px;
+    border: 4px solid rgba(255,255,255,0.25);
+    border-top-color: #4ade80;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  #powerBar {
+    position: absolute;
+    left: 50%;
+    bottom: env(safe-area-inset-bottom, 60px);
+    transform: translateX(-50%);
+    width: 60%;
+    max-width: 260px;
+    height: 8px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 6px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  #powerBar.active { opacity: 1; }
+
+  #powerFill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4ade80, #ffd23f, #f87171);
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="gameContainer">
+  <canvas id="webglCanvas"></canvas>
+  <canvas id="drawCanvas"></canvas>
+
+  <div id="hud">
+    <div id="score">Goals 0 / 0</div>
+    <div id="streak">Streak 0</div>
+  </div>
+
+  <div id="powerBar"><div id="powerFill"></div></div>
+
+  <div id="instructions">Swipe up on screen to kick the ball &mdash; curve your swipe to bend the shot!</div>
+
+  <div id="popup">
+    <div class="title"></div>
+    <div class="sub"></div>
+  </div>
+
+  <div id="loading"><div class="spinner"></div>Loading pitch...</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // Constants / world layout
+  // ---------------------------------------------------------------------
+  var GOAL_HALF_WIDTH = 3.66;
+  var GOAL_HEIGHT = 2.44;
+  var GOAL_Z = -9;
+  var BALL_START = { x: 0, y: 0.28, z: 8.5 };
+  var BALL_RADIUS = 0.28;
+  var KEEPER_Z = GOAL_Z + 0.55;
+  var KEEPER_MAX_DIVE = GOAL_HALF_WIDTH * 0.92;
+  var SAVE_RADIUS = 1.05;
+
+  // ---------------------------------------------------------------------
+  // Basic state
+  // ---------------------------------------------------------------------
+  var state = 'ready'; // ready | drawing | animating | result
+  var goals = 0, attempts = 0, streak = 0;
+
+  var scoreEl = document.getElementById('score');
+  var streakEl = document.getElementById('streak');
+  var instructionsEl = document.getElementById('instructions');
+  var popupEl = document.getElementById('popup');
+  var popupTitleEl = popupEl.querySelector('.title');
+  var popupSubEl = popupEl.querySelector('.sub');
+  var loadingEl = document.getElementById('loading');
+  var powerBarEl = document.getElementById('powerBar');
+  var powerFillEl = document.getElementById('powerFill');
+
+  function updateScoreHud() {
+    scoreEl.textContent = 'Goals ' + goals + ' / ' + attempts;
+    streakEl.textContent = 'Streak ' + streak;
+  }
+
+  // ---------------------------------------------------------------------
+  // Three.js setup
+  // ---------------------------------------------------------------------
+  var webglCanvas = document.getElementById('webglCanvas');
+  var renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x7ec8f2);
+  scene.fog = new THREE.Fog(0x7ec8f2, 20, 60);
+
+  var camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 200);
+
+  function positionCamera() {
+    camera.position.set(0, 2.1, BALL_START.z + 3.4);
+    camera.lookAt(0, 1.3, GOAL_Z);
+  }
+  positionCamera();
+
+  // Lighting
+  var ambient = new THREE.AmbientLight(0xffffff, 0.75);
+  scene.add(ambient);
+  var sun = new THREE.DirectionalLight(0xffffff, 0.75);
+  sun.position.set(6, 12, 6);
+  scene.add(sun);
+
+  // Ground
+  var groundGeo = new THREE.PlaneGeometry(60, 90);
+  var groundMat = new THREE.MeshLambertMaterial({ color: 0x2f9e44 });
+  var ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0;
+  scene.add(ground);
+
+  // Ground stripes for a pitch look
+  var stripeGroup = new THREE.Group();
+  var stripeCount = 12;
+  for (var s = 0; s < stripeCount; s++) {
+    var stripeMat = new THREE.MeshLambertMaterial({ color: s % 2 === 0 ? 0x2f9e44 : 0x2a8d3d });
+    var stripe = new THREE.Mesh(new THREE.PlaneGeometry(60, 90 / stripeCount), stripeMat);
+    stripe.rotation.x = -Math.PI / 2;
+    stripe.position.set(0, 0.001, -45 + (s + 0.5) * (90 / stripeCount));
+    stripeGroup.add(stripe);
+  }
+  scene.add(stripeGroup);
+
+  // Penalty box lines (simple white line loop on the ground)
+  function makeGroundLine(points) {
+    var geo = new THREE.BufferGeometry().setFromPoints(points);
+    var mat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    return new THREE.LineLoop(geo, mat);
+  }
+  var boxHalf = GOAL_HALF_WIDTH + 2.2;
+  var boxDepth = GOAL_Z + 5.5;
+  var penaltyBox = makeGroundLine([
+    new THREE.Vector3(-boxHalf, 0.01, GOAL_Z + 0.02),
+    new THREE.Vector3(boxHalf, 0.01, GOAL_Z + 0.02),
+    new THREE.Vector3(boxHalf, 0.01, boxDepth),
+    new THREE.Vector3(-boxHalf, 0.01, boxDepth)
+  ]);
+  scene.add(penaltyBox);
+
+  // Goal
+  var goalGroup = new THREE.Group();
+  var postMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  var postRadius = 0.09;
+
+  var leftPost = new THREE.Mesh(new THREE.CylinderGeometry(postRadius, postRadius, GOAL_HEIGHT, 12), postMat);
+  leftPost.position.set(-GOAL_HALF_WIDTH, GOAL_HEIGHT / 2, GOAL_Z);
+  goalGroup.add(leftPost);
+
+  var rightPost = leftPost.clone();
+  rightPost.position.x = GOAL_HALF_WIDTH;
+  goalGroup.add(rightPost);
+
+  var crossbarGeo = new THREE.CylinderGeometry(postRadius, postRadius, GOAL_HALF_WIDTH * 2 + postRadius * 2, 12);
+  var crossbar = new THREE.Mesh(crossbarGeo, postMat);
+  crossbar.rotation.z = Math.PI / 2;
+  crossbar.position.set(0, GOAL_HEIGHT, GOAL_Z);
+  goalGroup.add(crossbar);
+
+  // Back supports
+  var backDepth = 1.1;
+  [-GOAL_HALF_WIDTH, GOAL_HALF_WIDTH].forEach(function (x) {
+    var support = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, Math.sqrt(GOAL_HEIGHT * GOAL_HEIGHT + backDepth * backDepth), 8), postMat);
+    support.position.set(x, GOAL_HEIGHT / 2, GOAL_Z - backDepth / 2);
+    support.rotation.x = -Math.atan2(backDepth, GOAL_HEIGHT);
+    goalGroup.add(support);
+  });
+
+  // Net (simple semi-transparent wireframe panels)
+  var netMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.35 });
+  var backNet = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_HALF_WIDTH * 2, GOAL_HEIGHT, 10, 6), netMat);
+  backNet.position.set(0, GOAL_HEIGHT / 2, GOAL_Z - backDepth);
+  goalGroup.add(backNet);
+
+  var topNet = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_HALF_WIDTH * 2, backDepth, 10, 4), netMat);
+  topNet.rotation.x = Math.PI / 2;
+  topNet.position.set(0, GOAL_HEIGHT, GOAL_Z - backDepth / 2);
+  goalGroup.add(topNet);
+
+  [-1, 1].forEach(function (side) {
+    var sideNet = new THREE.Mesh(new THREE.PlaneGeometry(backDepth, GOAL_HEIGHT, 4, 6), netMat);
+    sideNet.rotation.y = Math.PI / 2;
+    sideNet.position.set(side * GOAL_HALF_WIDTH, GOAL_HEIGHT / 2, GOAL_Z - backDepth / 2);
+    goalGroup.add(sideNet);
+  });
+
+  scene.add(goalGroup);
+
+  // Ball
+  var ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 24, 24);
+  var ballMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  var ball = new THREE.Mesh(ballGeo, ballMat);
+  scene.add(ball);
+
+  // simple pentagon pattern via a second darker sphere layer (edges) for a football look
+  var ballEdges = new THREE.Mesh(
+    new THREE.SphereGeometry(BALL_RADIUS * 1.002, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0x222222, wireframe: true, transparent: true, opacity: 0.35 })
+  );
+  ball.add(ballEdges);
+
+  function resetBall() {
+    ball.position.set(BALL_START.x, BALL_START.y, BALL_START.z);
+    ball.rotation.set(0, 0, 0);
+  }
+  resetBall();
+
+  // Goalkeeper (simple blocky humanoid)
+  var keeper = new THREE.Group();
+  var kitColor = 0xffcc00;
+  var skinColor = 0xe0a878;
+
+  var torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.75, 0.32), new THREE.MeshLambertMaterial({ color: kitColor }));
+  torso.position.y = 0.95;
+  keeper.add(torso);
+
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), new THREE.MeshLambertMaterial({ color: skinColor }));
+  head.position.y = 1.52;
+  keeper.add(head);
+
+  var legGeo = new THREE.BoxGeometry(0.22, 0.7, 0.24);
+  var legMat = new THREE.MeshLambertMaterial({ color: 0x1d3557 });
+  var leftLeg = new THREE.Mesh(legGeo, legMat);
+  leftLeg.position.set(-0.17, 0.35, 0);
+  keeper.add(leftLeg);
+  var rightLeg = leftLeg.clone();
+  rightLeg.position.x = 0.17;
+  keeper.add(rightLeg);
+
+  var armGeo = new THREE.BoxGeometry(0.2, 0.62, 0.2);
+  var armMat = new THREE.MeshLambertMaterial({ color: kitColor });
+  var leftArm = new THREE.Mesh(armGeo, armMat);
+  leftArm.position.set(-0.42, 1.0, 0);
+  leftArm.geometry.translate(0, -0.31, 0);
+  keeper.add(leftArm);
+  var rightArm = leftArm.clone();
+  rightArm.position.x = 0.42;
+  keeper.add(rightArm);
+
+  keeper.position.set(0, 0, KEEPER_Z);
+  scene.add(keeper);
+
+  function resetKeeper() {
+    keeper.position.set(0, 0, KEEPER_Z);
+    keeper.rotation.set(0, 0, 0);
+    leftArm.rotation.set(0, 0, 0);
+    rightArm.rotation.set(0, 0, 0);
+  }
+
+  // ---------------------------------------------------------------------
+  // Resize handling
+  // ---------------------------------------------------------------------
+  var drawCanvas = document.getElementById('drawCanvas');
+  var drawCtx = drawCanvas.getContext('2d');
+
+  function resize() {
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+
+    drawCanvas.width = w * dpr;
+    drawCanvas.height = h * dpr;
+    drawCanvas.style.width = w + 'px';
+    drawCanvas.style.height = h + 'px';
+    drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', function () { setTimeout(resize, 200); });
+  resize();
+
+  // ---------------------------------------------------------------------
+  // Drawing / swipe input (touch + mouse)
+  // ---------------------------------------------------------------------
+  var path = [];
+  var dragging = false;
+
+  function getRelPos(clientX, clientY) {
+    var rect = drawCanvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top, t: performance.now() };
+  }
+
+  function clearTrail() {
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  }
+
+  function drawTrail() {
+    clearTrail();
+    if (path.length < 2) return;
+    drawCtx.save();
+    drawCtx.lineJoin = 'round';
+    drawCtx.lineCap = 'round';
+    drawCtx.strokeStyle = 'rgba(255,255,255,0.55)';
+    drawCtx.lineWidth = 10;
+    drawCtx.shadowColor = 'rgba(255,255,255,0.9)';
+    drawCtx.shadowBlur = 12;
+    drawCtx.beginPath();
+    drawCtx.moveTo(path[0].x, path[0].y);
+    for (var i = 1; i < path.length; i++) {
+      drawCtx.lineTo(path[i].x, path[i].y);
+    }
+    drawCtx.stroke();
+
+    drawCtx.strokeStyle = 'rgba(74,222,128,0.9)';
+    drawCtx.lineWidth = 4;
+    drawCtx.stroke();
+    drawCtx.restore();
+  }
+
+  function startDraw(clientX, clientY) {
+    if (state !== 'ready') return;
+    state = 'drawing';
+    path = [getRelPos(clientX, clientY)];
+    dragging = true;
+    instructionsEl.style.opacity = '0';
+    powerBarEl.classList.add('active');
+  }
+
+  function moveDraw(clientX, clientY) {
+    if (!dragging || state !== 'drawing') return;
+    path.push(getRelPos(clientX, clientY));
+    if (path.length > 200) path.shift();
+
+    // live power preview based on upward distance so far
+    var first = path[0];
+    var last = path[path.length - 1];
+    var upDist = first.y - last.y;
+    var powerPreview = clamp(upDist / (window.innerHeight * 0.4), 0, 1);
+    powerFillEl.style.width = (powerPreview * 100) + '%';
+  }
+
+  function endDraw() {
+    if (!dragging) return;
+    dragging = false;
+    powerBarEl.classList.remove('active');
+    powerFillEl.style.width = '0%';
+
+    if (state !== 'drawing') return;
+
+    if (path.length < 2) {
+      state = 'ready';
+      clearTrail();
+      instructionsEl.style.opacity = '1';
+      return;
+    }
+
+    var shot = analyzeSwipe(path);
+    clearTrail();
+    path = [];
+
+    if (!shot) {
+      state = 'ready';
+      instructionsEl.style.opacity = '1';
+      instructionsEl.textContent = 'Swipe up harder to kick the ball!';
+      setTimeout(function () {
+        instructionsEl.textContent = 'Swipe up on screen to kick the ball — curve your swipe to bend the shot!';
+      }, 1400);
+      return;
+    }
+
+    launchShot(shot);
+  }
+
+  // Touch events
+  drawCanvas.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    startDraw(t.clientX, t.clientY);
+  }, { passive: false });
+
+  drawCanvas.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    moveDraw(t.clientX, t.clientY);
+    drawTrail();
+  }, { passive: false });
+
+  drawCanvas.addEventListener('touchend', function (e) {
+    e.preventDefault();
+    endDraw();
+  }, { passive: false });
+
+  drawCanvas.addEventListener('touchcancel', function (e) {
+    e.preventDefault();
+    dragging = false;
+    state = 'ready';
+    clearTrail();
+    powerBarEl.classList.remove('active');
+    powerFillEl.style.width = '0%';
+  }, { passive: false });
+
+  // Mouse events (desktop testing)
+  drawCanvas.addEventListener('mousedown', function (e) { startDraw(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', function (e) {
+    if (dragging) { moveDraw(e.clientX, e.clientY); drawTrail(); }
+  });
+  window.addEventListener('mouseup', function () { endDraw(); });
+
+  // ---------------------------------------------------------------------
+  // Swipe analysis -> shot parameters
+  // ---------------------------------------------------------------------
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function analyzeSwipe(pts) {
+    var first = pts[0];
+    var last = pts[pts.length - 1];
+    var dx = last.x - first.x;
+    var upDist = first.y - last.y; // positive means swiped upward
+
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+
+    var length = Math.sqrt(dx * dx + upDist * upDist);
+    if (length < 35 || upDist < 25) {
+      return null; // too weak / not an upward swipe
+    }
+
+    // curvature: max perpendicular deviation from the straight first->last line
+    var dirX = last.x - first.x;
+    var dirY = last.y - first.y;
+    var dirLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+    var maxDev = 0;
+    var devSign = 0;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      var cross = dirX * (p.y - first.y) - dirY * (p.x - first.x);
+      var dist = cross / dirLen;
+      if (Math.abs(dist) > Math.abs(maxDev)) {
+        maxDev = dist;
+        devSign = dist > 0 ? 1 : -1;
+      }
+    }
+    var curveStrength = clamp(Math.abs(maxDev) / (dirLen + 1), 0, 0.9);
+    // screen space: positive cross means curve bends to one side; map to world:
+    // (screen x right = world +x). Flip sign to feel natural for banana kicks.
+    var curveSign = -devSign;
+
+    var lateral = clamp(dx / (w * 0.5), -1, 1);
+    var power = clamp(upDist / (h * 0.42), 0.18, 1);
+
+    var targetX = lateral * (GOAL_HALF_WIDTH * 1.35);
+    var curveMagnitude = curveStrength * 3.2 * curveSign;
+
+    return {
+      targetX: targetX,
+      curveMagnitude: curveMagnitude,
+      power: power
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Shot animation state
+  // ---------------------------------------------------------------------
+  var shotAnim = null;
+
+  function launchShot(shot) {
+    state = 'animating';
+    resetKeeper();
+
+    var finalX = clamp(shot.targetX + shot.curveMagnitude, -(GOAL_HALF_WIDTH + 2.2), GOAL_HALF_WIDTH + 2.2);
+    var maxHeight = 1.0 + shot.power * 2.6;
+    var duration = lerp(1150, 680, shot.power);
+
+    // Slight randomization to the height so identical swipes don't feel robotic
+    maxHeight *= 0.92 + Math.random() * 0.16;
+
+    shotAnim = {
+      startTime: performance.now(),
+      duration: duration,
+      finalX: finalX,
+      curveMag: shot.curveMagnitude,
+      maxHeight: maxHeight,
+      power: shot.power,
+      keeperDiveStarted: false,
+      keeperDiveX: 0,
+      resolved: false
+    };
+  }
+
+  function startKeeperDive(predictedX) {
+    // Keeper has imperfect information -> add reaction error
+    var error = (Math.random() - 0.5) * 2.6;
+    var diveX = clamp(predictedX + error, -KEEPER_MAX_DIVE, KEEPER_MAX_DIVE);
+
+    // Occasionally the keeper guesses the wrong way entirely (adds excitement)
+    if (Math.random() < 0.12) {
+      diveX = -diveX * 0.6;
+    }
+
+    shotAnim.keeperDiveX = diveX;
+    shotAnim.keeperDiveStarted = true;
+    shotAnim.keeperDiveStartTime = performance.now();
+  }
+
+  function updateKeeperDive(now) {
+    if (!shotAnim.keeperDiveStarted) return;
+    var t = clamp((now - shotAnim.keeperDiveStartTime) / 380, 0, 1);
+    var ease = t * t * (3 - 2 * t);
+    keeper.position.x = lerp(0, shotAnim.keeperDiveX, ease);
+    keeper.position.y = Math.sin(ease * Math.PI) * 0.15;
+    var lean = clamp(shotAnim.keeperDiveX / KEEPER_MAX_DIVE, -1, 1);
+    keeper.rotation.z = -lean * ease * 1.05;
+    leftArm.rotation.z = -lean * ease * 1.4;
+    rightArm.rotation.z = -lean * ease * 1.4;
+  }
+
+  function updateShot(now) {
+    if (!shotAnim) return;
+    var t = clamp((now - shotAnim.startTime) / shotAnim.duration, 0, 1);
+
+    var z = lerp(BALL_START.z, GOAL_Z, t);
+    var baseX = lerp(0, shotAnim.finalX - shotAnim.curveMag, t);
+    var bend = shotAnim.curveMag * Math.sin(t * Math.PI * 0.85);
+    var x = baseX + bend;
+    var arc = Math.sin(t * Math.PI) * shotAnim.maxHeight;
+    var y = BALL_RADIUS + arc;
+
+    ball.position.set(x, y, z);
+    ball.rotation.x += 0.35 + shotAnim.power * 0.4;
+    ball.rotation.z += shotAnim.curveMag * 0.02;
+
+    if (!shotAnim.keeperDiveStarted && t >= 0.32) {
+      startKeeperDive(shotAnim.finalX);
+    }
+    updateKeeperDive(now);
+
+    if (t >= 1 && !shotAnim.resolved) {
+      shotAnim.resolved = true;
+      resolveShot(x, y);
+    }
+  }
+
+  function resolveShot(finalX, finalY) {
+    attempts++;
+    var onTarget = Math.abs(finalX) <= GOAL_HALF_WIDTH - BALL_RADIUS * 0.3 &&
+                   finalY <= GOAL_HEIGHT - BALL_RADIUS * 0.2 &&
+                   finalY >= 0;
+
+    var result;
+    if (!onTarget) {
+      result = 'miss';
+    } else {
+      var diveDist = Math.abs(finalX - keeper.position.x);
+      if (diveDist <= SAVE_RADIUS) {
+        result = 'save';
+      } else {
+        result = 'goal';
+      }
+    }
+
+    if (result === 'goal') {
+      goals++;
+      streak++;
+    } else {
+      streak = 0;
+    }
+    updateScoreHud();
+    showPopup(result);
+  }
+
+  function showPopup(result) {
+    popupEl.className = '';
+    var title, sub;
+    if (result === 'goal') {
+      title = 'GOAL!';
+      sub = streak > 1 ? streak + ' in a row!' : 'Great strike!';
+      popupEl.classList.add('goal');
+    } else if (result === 'save') {
+      title = 'SAVED!';
+      sub = 'The keeper got a hand to it';
+      popupEl.classList.add('save');
+    } else {
+      title = 'MISSED!';
+      sub = 'Off target';
+      popupEl.classList.add('miss');
+    }
+    popupTitleEl.textContent = title;
+    popupSubEl.textContent = sub;
+
+    requestAnimationFrame(function () {
+      popupEl.classList.add('show');
+    });
+
+    state = 'result';
+    setTimeout(function () {
+      popupEl.classList.remove('show');
+      setTimeout(function () {
+        resetForNextKick();
+      }, 250);
+    }, 1400);
+  }
+
+  function resetForNextKick() {
+    resetBall();
+    resetKeeper();
+    shotAnim = null;
+    state = 'ready';
+    instructionsEl.style.opacity = '1';
+  }
+
+  // ---------------------------------------------------------------------
+  // Main render loop
+  // ---------------------------------------------------------------------
+  function animate() {
+    requestAnimationFrame(animate);
+    var now = performance.now();
+    if (state === 'animating') {
+      updateShot(now);
+    }
+    renderer.render(scene, camera);
+  }
+
+  loadingEl.style.display = 'none';
+  updateScoreHud();
+  animate();
+})();
+</script>
+</body>
+</html>
