@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v10";
+const SW_VERSION = "v11";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -537,10 +537,21 @@ function parseCsv(text) {
   return rows;
 }
 
+// Some sync sources (e.g. Make.com writing a full datetime into a Date or
+// Time cell) produce values like "2026-07-05T06:00:00.000Z" instead of a
+// plain date or time. Detect that shape so both normalizers can convert it
+// to the viewer's local date/time instead of falling through unparsed.
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
 function normalizeSheetDate(raw) {
   if (!raw) return null;
   const value = raw.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  if (ISO_DATETIME_RE.test(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : formatDateKey(parsed);
+  }
 
   const usMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (usMatch) {
@@ -555,8 +566,15 @@ function normalizeSheetDate(raw) {
 function normalizeSheetTime(raw) {
   if (!raw) return null;
   const value = raw.trim();
+
+  if (ISO_DATETIME_RE.test(value)) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+  }
+
   const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)?$/);
-  if (!match) return value;
+  if (!match) return null; // unrecognized format — never leak raw text into the UI
 
   let [, hour, minute, meridiem] = match;
   hour = parseInt(hour, 10);
