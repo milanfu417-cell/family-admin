@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v15";
+const SW_VERSION = "v16";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -261,6 +261,18 @@ function setupFab() {
   });
 }
 
+// Make.com's Google Calendar "Create an Event" module requires an end time.
+// Default to one hour after the start time (wrapping past midnight if
+// needed); for an all-day-ish entry with no start time, use 00:00–23:59.
+function computeEndTime(startTime) {
+  if (!startTime) return "23:59";
+  const [hour, minute] = startTime.split(":").map(Number);
+  const endMinutes = (hour * 60 + minute + 60) % (24 * 60);
+  const endHour = Math.floor(endMinutes / 60);
+  const endMinute = endMinutes % 60;
+  return `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`;
+}
+
 function setupEventForm() {
   const form = document.getElementById("sheet-form-event");
   const submitBtn = document.getElementById("sheet-event-submit");
@@ -306,7 +318,8 @@ function setupEventForm() {
         body: JSON.stringify({
           title: pendingEventEntry.title,
           date: pendingEventEntry.date,
-          time: pendingEventEntry.time,
+          time: pendingEventEntry.time || "00:00",
+          end_time: computeEndTime(pendingEventEntry.time),
           notes: pendingEventEntry.notes,
         }),
       });
