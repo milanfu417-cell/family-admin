@@ -5,9 +5,8 @@ document.getElementById("today").textContent = new Date().toLocaleDateString(und
   day: "numeric",
 });
 
-// Paste your Make.com "Custom Webhook" URL here to have Quick Add entries
-// sent straight to your Make.com scenario (e.g. to file into Gmail/Calendar).
-// Leave blank to just save entries locally in the browser.
+// Paste your Make.com "Custom Webhook" URL here to have new events/chores
+// sent straight to your Make.com scenario. Leave blank to just save locally.
 const MAKE_WEBHOOK_URL = "";
 
 // Public CSV export link for the Google Sheet Make.com writes your synced
@@ -26,7 +25,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v7";
+const SW_VERSION = "v8";
 
 const QUICK_ADD_STORAGE_KEY = "familyAdminQuickAdds";
 const MAX_STORED_ENTRIES = 50;
@@ -60,57 +59,152 @@ function addEntry(entry) {
 function deleteEntry(id) {
   saveEntries(loadEntries().filter((entry) => entry.id !== id));
   renderCalendar();
+  renderChores();
 }
 
-function setupQuickAddForm() {
-  const form = document.getElementById("quick-add-form");
-  const statusEl = document.getElementById("qa-status");
+function notifyMake(entry) {
+  if (!MAKE_WEBHOOK_URL) return;
+  fetch(MAKE_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  }).catch(() => {});
+}
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+// ---------- Floating Action Button + bottom sheet ----------
 
-    let entry;
-    try {
-      const formData = new FormData(form);
-      entry = {
-        id: generateId(),
-        type: formData.get("type"),
-        title: formData.get("title"),
-        date: formData.get("date") || null,
-        time: formData.get("time") || null,
-        assignee: formData.get("assignee") || null,
-        notes: formData.get("notes") || null,
-        createdAt: new Date().toISOString(),
-      };
-
-      addEntry(entry);
-      renderCalendar();
-    } catch (err) {
-      statusEl.textContent = `Couldn't save: ${err.message}`;
-      return;
-    }
-
-    if (MAKE_WEBHOOK_URL) {
-      statusEl.textContent = "Sending to Make.com…";
-      try {
-        const response = await fetch(MAKE_WEBHOOK_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry),
-        });
-        statusEl.textContent = response.ok
-          ? "Sent to Make.com ✓"
-          : "Saved locally — Make.com returned an error.";
-      } catch {
-        statusEl.textContent = "Saved locally — couldn't reach Make.com.";
-      }
-    } else {
-      statusEl.textContent = "Saved locally. Add your Make.com webhook URL in script.js to sync automatically.";
-    }
-
-    form.reset();
+function showSheetPanel(id) {
+  document.querySelectorAll(".sheet-panel").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.id !== id);
   });
 }
+
+function openSheet() {
+  showSheetPanel("sheet-choices");
+  document.getElementById("sheet-overlay").classList.add("open");
+}
+
+function closeSheet() {
+  document.getElementById("sheet-overlay").classList.remove("open");
+}
+
+function setupFab() {
+  const overlay = document.getElementById("sheet-overlay");
+
+  document.getElementById("fab-add").addEventListener("click", openSheet);
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeSheet();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && overlay.classList.contains("open")) closeSheet();
+  });
+
+  document.querySelectorAll(".sheet-choice").forEach((button) => {
+    button.addEventListener("click", () => showSheetPanel(`sheet-form-${button.dataset.choice}`));
+  });
+
+  document.querySelectorAll("[data-sheet-back]").forEach((button) => {
+    button.addEventListener("click", () => showSheetPanel("sheet-choices"));
+  });
+}
+
+function setupEventForm() {
+  const form = document.getElementById("sheet-form-event");
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = document.getElementById("sheet-event-title").value.trim();
+    if (!title) return;
+
+    const entry = {
+      id: generateId(),
+      type: "event",
+      title,
+      date: document.getElementById("sheet-event-date").value || null,
+      time: document.getElementById("sheet-event-time").value || null,
+      createdAt: new Date().toISOString(),
+    };
+
+    addEntry(entry);
+    renderCalendar();
+    notifyMake(entry);
+    form.reset();
+    closeSheet();
+  });
+}
+
+function setupChoreForm() {
+  const form = document.getElementById("sheet-form-chore");
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = document.getElementById("sheet-chore-title").value.trim();
+    if (!title) return;
+
+    const entry = { id: generateId(), type: "chore", title, createdAt: new Date().toISOString() };
+    addEntry(entry);
+    renderChores();
+    notifyMake(entry);
+    form.reset();
+    closeSheet();
+  });
+}
+
+// ---------- Chores tile (inline add) ----------
+
+function getLocalChores() {
+  return loadEntries().filter((entry) => entry.type === "chore");
+}
+
+function renderChores() {
+  const list = document.getElementById("chores-list");
+  const dynamicRows = getLocalChores()
+    .map(
+      (chore) => `
+      <li class="tile-list-row">
+        <span>${escapeHtml(chore.title)}</span>
+        <button type="button" class="delete-btn" data-delete-id="${escapeHtml(chore.id)}" aria-label="Delete ${escapeHtml(chore.title)}">🗑️</button>
+      </li>
+    `
+    )
+    .join("");
+
+  list.innerHTML = `
+    <li>Take out the trash</li>
+    <li>Load the dishwasher</li>
+    ${dynamicRows}
+  `;
+}
+
+function setupInlineChoreForm() {
+  const toggle = document.getElementById("chore-add-toggle");
+  const form = document.getElementById("chore-add-form");
+  const input = document.getElementById("chore-add-input");
+
+  toggle.addEventListener("click", () => {
+    form.classList.remove("hidden");
+    toggle.classList.add("hidden");
+    input.focus();
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = input.value.trim();
+    if (!title) return;
+
+    const entry = { id: generateId(), type: "chore", title, createdAt: new Date().toISOString() };
+    addEntry(entry);
+    renderChores();
+    notifyMake(entry);
+    form.reset();
+    form.classList.add("hidden");
+    toggle.classList.remove("hidden");
+  });
+}
+
+// ---------- Calendar Sync tile ----------
 
 let remoteCalendarData = { lastSynced: null, events: [] };
 let calendarCursor = startOfMonth(new Date());
@@ -142,6 +236,14 @@ function isPastDate(dateStr) {
   return parseDateOnly(dateStr) < startOfToday();
 }
 
+// Some sync sources append a raw ISO timestamp to the title (e.g. an
+// all-day event exported as "School Off - 2026-09-14T16:00:00.000Z") —
+// strip that off so only the human-readable title ever renders.
+function cleanEventTitle(title) {
+  if (!title) return title;
+  return title.replace(/\s*[-–—]\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s*$/i, "").trim();
+}
+
 function getVisibleEvents() {
   const localEvents = loadEntries()
     .filter((entry) => entry.type === "event")
@@ -149,7 +251,7 @@ function getVisibleEvents() {
 
   const remoteEvents = (remoteCalendarData.events || []).map((event) => ({
     id: event.id || null,
-    title: event.title,
+    title: cleanEventTitle(event.title),
     date: event.date || null,
     time: event.time || null,
     notes: event.notes || null,
@@ -353,7 +455,7 @@ function parseSheetEvents(csvText) {
     .filter((cells) => cells[titleIndex] && cells[titleIndex].trim())
     .map((cells, index) => ({
       id: `sheet-${index}`,
-      title: cells[titleIndex].trim(),
+      title: cleanEventTitle(cells[titleIndex].trim()),
       date: dateIndex >= 0 ? normalizeSheetDate(cells[dateIndex]) : null,
       time: timeIndex >= 0 ? normalizeSheetTime(cells[timeIndex]) : null,
       notes: notesIndex >= 0 ? (cells[notesIndex] || "").trim() : "",
@@ -399,6 +501,7 @@ function setupDeleteDelegation() {
 
   document.getElementById("calendar-grid").addEventListener("click", handleDelete);
   document.getElementById("calendar-unscheduled").addEventListener("click", handleDelete);
+  document.getElementById("chores-list").addEventListener("click", handleDelete);
 }
 
 function registerServiceWorker() {
@@ -421,8 +524,12 @@ function registerServiceWorker() {
   });
 }
 
-setupQuickAddForm();
+setupFab();
+setupEventForm();
+setupChoreForm();
+setupInlineChoreForm();
 setupCalendarNav();
 setupDeleteDelegation();
+renderChores();
 loadCalendarEvents();
 registerServiceWorker();

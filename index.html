@@ -6,7 +6,7 @@
   <title>Family Admin</title>
 
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#4f46e5" />
+  <meta name="theme-color" content="#6366f1" />
 
   <link rel="icon" href="icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="icons/icon-180.png" />
@@ -14,62 +14,20 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Admin" />
 
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Family Admin <span class="version-tag">v1.1 - Live Event Version</span></h1>
+    <h1>Family Admin <span class="version-tag">v2.0 · Tiles</span></h1>
     <p class="subtitle" id="today"></p>
   </header>
 
-  <main class="dashboard">
-    <section class="card card-wide" id="card-quick-add">
-      <h2>➕ Quick Add</h2>
-      <form id="quick-add-form" class="quick-add-form">
-        <div class="form-row">
-          <label for="qa-type">Type</label>
-          <select id="qa-type" name="type">
-            <option value="event">Event</option>
-            <option value="chore">Chore</option>
-            <option value="shopping">Shopping Item</option>
-            <option value="reminder">Reminder</option>
-          </select>
-        </div>
-
-        <div class="form-row">
-          <label for="qa-title">Title</label>
-          <input type="text" id="qa-title" name="title" placeholder="e.g. Dentist appointment" required />
-        </div>
-
-        <div class="form-row form-row-split">
-          <div>
-            <label for="qa-date">Date</label>
-            <input type="date" id="qa-date" name="date" />
-          </div>
-          <div>
-            <label for="qa-time">Time</label>
-            <input type="time" id="qa-time" name="time" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <label for="qa-assignee">Assigned To</label>
-          <input type="text" id="qa-assignee" name="assignee" placeholder="e.g. Mom, Dad, Alex" />
-        </div>
-
-        <div class="form-row">
-          <label for="qa-notes">Notes</label>
-          <textarea id="qa-notes" name="notes" rows="2" placeholder="Optional details"></textarea>
-        </div>
-
-        <button type="submit" class="btn-primary">Add</button>
-        <p class="form-status" id="qa-status" aria-live="polite"></p>
-      </form>
-    </section>
-
-    <section class="card card-wide" id="card-calendar">
-      <h2>📅 Calendar Sync</h2>
-      <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
+  <main class="dashboard-tiles">
+    <section class="tile tile-wide" id="tile-calendar">
+      <div class="tile-heading">
+        <h2>📅 Calendar Sync</h2>
+        <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
+      </div>
 
       <div class="calendar-header">
         <button type="button" class="calendar-nav-btn" id="cal-prev" aria-label="Previous month">‹</button>
@@ -85,30 +43,36 @@
       <div class="calendar-unscheduled" id="calendar-unscheduled"></div>
     </section>
 
-    <section class="card" id="card-chores">
+    <section class="tile" id="tile-chores">
       <h2>🧹 Chores</h2>
-      <ul class="list" id="chores-list">
+      <ul class="tile-list" id="chores-list">
         <li>Take out the trash</li>
         <li>Load the dishwasher</li>
       </ul>
+
+      <button type="button" class="inline-add-toggle" id="chore-add-toggle">+ Add Chore</button>
+      <form class="inline-add-form hidden" id="chore-add-form">
+        <input type="text" id="chore-add-input" placeholder="New chore" required />
+        <button type="submit" class="btn-icon" aria-label="Save chore">✓</button>
+      </form>
     </section>
 
-    <section class="card" id="card-shopping">
+    <section class="tile" id="tile-shopping">
       <h2>🛒 Shopping List</h2>
-      <ul class="list" id="shopping-list">
+      <ul class="tile-list">
         <li>Milk</li>
         <li>Eggs</li>
       </ul>
     </section>
 
-    <section class="card" id="card-meals">
+    <section class="tile" id="tile-meals">
       <h2>🍽️ Meal Plan</h2>
-      <p>Nothing planned for today.</p>
+      <p class="tile-empty">Nothing planned for today.</p>
     </section>
 
-    <section class="card" id="card-budget">
+    <section class="tile" id="tile-budget">
       <h2>💰 Budget</h2>
-      <p>Track shared family expenses here.</p>
+      <p class="tile-empty">Track shared family expenses here.</p>
     </section>
   </main>
 
@@ -116,6 +80,58 @@
     <p>Family Admin Dashboard</p>
   </footer>
 
-  <script src="script.js?v=7"></script>
+  <button type="button" class="fab" id="fab-add" aria-label="Add something">+</button>
+
+  <div class="sheet-overlay" id="sheet-overlay">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-choices-title">
+      <div class="sheet-handle"></div>
+
+      <div class="sheet-panel" id="sheet-choices">
+        <h2 id="sheet-choices-title">Quick Add</h2>
+        <button type="button" class="sheet-choice" data-choice="event">
+          <span class="sheet-choice-icon">📅</span> Add Calendar Event
+        </button>
+        <button type="button" class="sheet-choice" data-choice="chore">
+          <span class="sheet-choice-icon">🧹</span> Add Todo Chore
+        </button>
+      </div>
+
+      <form class="sheet-panel sheet-form hidden" id="sheet-form-event">
+        <h2>📅 Add Calendar Event</h2>
+        <label class="form-row">
+          Title
+          <input type="text" id="sheet-event-title" required />
+        </label>
+        <div class="form-row-split">
+          <label class="form-row">
+            Date
+            <input type="date" id="sheet-event-date" />
+          </label>
+          <label class="form-row">
+            Time
+            <input type="time" id="sheet-event-time" />
+          </label>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="btn-ghost" data-sheet-back>Back</button>
+          <button type="submit" class="btn-primary">Add Event</button>
+        </div>
+      </form>
+
+      <form class="sheet-panel sheet-form hidden" id="sheet-form-chore">
+        <h2>🧹 Add Todo Chore</h2>
+        <label class="form-row">
+          Task
+          <input type="text" id="sheet-chore-title" required />
+        </label>
+        <div class="sheet-actions">
+          <button type="button" class="btn-ghost" data-sheet-back>Back</button>
+          <button type="submit" class="btn-primary">Add Chore</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="script.js?v=8"></script>
 </body>
 </html>
