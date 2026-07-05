@@ -154,6 +154,12 @@ body {
   opacity: 0.85;
 }
 
+.btn-link {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+
 .form-status {
   margin: 0;
   font-size: 0.85rem;
