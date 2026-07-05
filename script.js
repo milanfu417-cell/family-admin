@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v11";
+const SW_VERSION = "v12";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -93,6 +93,28 @@ function deleteEntry(id) {
   renderBudget();
 }
 
+// Synced events aren't stored locally — they're re-fetched from the Sheet
+// every load — so "deleting" one just remembers its id here and filters it
+// out of the view permanently, regardless of what the Sheet keeps sending.
+const DISMISSED_SYNC_KEY = "familyAdminDismissedSync";
+
+function loadDismissedSyncIds() {
+  try {
+    return JSON.parse(localStorage.getItem(DISMISSED_SYNC_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function dismissSyncedEvent(id) {
+  const dismissed = loadDismissedSyncIds();
+  if (!dismissed.includes(id)) {
+    dismissed.push(id);
+    localStorage.setItem(DISMISSED_SYNC_KEY, JSON.stringify(dismissed));
+  }
+  renderCalendar();
+}
+
 function notifyMake(entry) {
   if (!MAKE_WEBHOOK_URL) return;
   fetch(MAKE_WEBHOOK_URL, {
@@ -106,7 +128,12 @@ function setupDeleteDelegation() {
   document.querySelector(".dashboard-tiles").addEventListener("click", (event) => {
     const button = event.target.closest("[data-delete-id]");
     if (!button) return;
-    deleteEntry(button.dataset.deleteId);
+    const id = button.dataset.deleteId;
+    if (id.startsWith("sheet:")) {
+      dismissSyncedEvent(id);
+    } else {
+      deleteEntry(id);
+    }
   });
 }
 
@@ -346,14 +373,17 @@ function getVisibleEvents() {
     .filter((entry) => entry.type === "event")
     .map((entry) => ({ id: entry.id, title: entry.title, date: entry.date, time: entry.time, local: true }));
 
-  const remoteEvents = (remoteCalendarData.events || []).map((event) => ({
-    id: event.id || null,
-    title: cleanEventTitle(event.title),
-    date: event.date || null,
-    time: event.time || null,
-    notes: event.notes || null,
-    local: false,
-  }));
+  const dismissedIds = loadDismissedSyncIds();
+  const remoteEvents = (remoteCalendarData.events || [])
+    .filter((event) => !dismissedIds.includes(event.id))
+    .map((event) => ({
+      id: event.id || null,
+      title: cleanEventTitle(event.title),
+      date: event.date || null,
+      time: event.time || null,
+      notes: event.notes || null,
+      local: false,
+    }));
 
   // Hide anything dated before today so past events never clutter the view.
   return [...localEvents, ...remoteEvents].filter((event) => !isPastDate(event.date));
@@ -381,11 +411,7 @@ function renderEventChip(event) {
   return `
     <div class="calendar-event"${event.notes ? ` title="${escapeHtml(event.notes)}"` : ""}>
       <span class="calendar-event-title">${escapeHtml(title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
-      ${
-        event.local
-          ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>`
-          : ""
-      }
+      <button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>
     </div>
   `;
 }
@@ -444,11 +470,7 @@ function renderUnscheduled(events) {
           ${event.local ? '<span class="badge-local">local</span>' : ""}
           <span>${escapeHtml(title)}</span>
         </span>
-        ${
-          event.local
-            ? `<button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>`
-            : ""
-        }
+        <button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>
       </div>
     `;
       })
@@ -601,14 +623,21 @@ function parseSheetEvents(csvText) {
   return rows
     .slice(1)
     .filter((cells) => cells[titleIndex] && cells[titleIndex].trim())
-    .map((cells, index) => ({
-      id: `sheet-${index}`,
-      title: cleanEventTitle(cells[titleIndex].trim()),
-      date: dateIndex >= 0 ? normalizeSheetDate(cells[dateIndex]) : null,
-      time: timeIndex >= 0 ? normalizeSheetTime(cells[timeIndex]) : null,
-      notes: notesIndex >= 0 ? (cells[notesIndex] || "").trim() : "",
-      local: false,
-    }));
+    .map((cells) => {
+      const title = cleanEventTitle(cells[titleIndex].trim());
+      const date = dateIndex >= 0 ? normalizeSheetDate(cells[dateIndex]) : null;
+      const time = timeIndex >= 0 ? normalizeSheetTime(cells[timeIndex]) : null;
+      return {
+        // Content-derived (not row-index-based) so a dismissed event stays
+        // dismissed across re-syncs even if the Sheet's row order shifts.
+        id: `sheet:${title}|${date || ""}|${time || ""}`,
+        title,
+        date,
+        time,
+        notes: notesIndex >= 0 ? (cells[notesIndex] || "").trim() : "",
+        local: false,
+      };
+    });
 }
 
 async function loadCalendarEvents() {
