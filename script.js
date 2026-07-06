@@ -50,7 +50,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v21";
+const SW_VERSION = "v22";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -394,7 +394,33 @@ function setupEventForm() {
 
 // ---------- Direct Google Calendar API auth ----------
 
-let googleAccessToken = null;
+// Access tokens from Google last ~1 hour. Without this, googleAccessToken
+// would only ever live in a JS variable, so any page reload (mobile browsers
+// routinely reload backgrounded tabs) would silently sign you out.
+const GOOGLE_TOKEN_STORAGE_KEY = "familyAdminGoogleToken";
+
+function saveGoogleToken(token, expiresInSeconds) {
+  localStorage.setItem(
+    GOOGLE_TOKEN_STORAGE_KEY,
+    JSON.stringify({ token, expiresAt: Date.now() + expiresInSeconds * 1000 })
+  );
+}
+
+function loadStoredGoogleToken() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(GOOGLE_TOKEN_STORAGE_KEY));
+    if (stored && stored.expiresAt > Date.now()) return stored.token;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function clearStoredGoogleToken() {
+  localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY);
+}
+
+let googleAccessToken = loadStoredGoogleToken();
 let googleTokenClient = null;
 
 function updateGoogleSignInUI() {
@@ -417,6 +443,7 @@ function handleGoogleSignOut() {
     google.accounts.oauth2.revoke(googleAccessToken, () => {});
   }
   googleAccessToken = null;
+  clearStoredGoogleToken();
   updateGoogleSignInUI();
   loadCalendarEvents();
 }
@@ -442,6 +469,7 @@ function initGoogleAuth() {
           return;
         }
         googleAccessToken = response.access_token;
+        saveGoogleToken(response.access_token, response.expires_in);
         updateGoogleSignInUI();
         loadCalendarEvents();
       },
@@ -561,6 +589,7 @@ async function loadCalendarEventsFromGoogleApi() {
     if (response.status === 401) {
       // Token expired or revoked — drop back to signed-out state.
       googleAccessToken = null;
+      clearStoredGoogleToken();
       updateGoogleSignInUI();
       throw new Error("Google auth expired");
     }
