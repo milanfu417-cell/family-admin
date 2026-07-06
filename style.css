@@ -254,6 +254,20 @@ body {
   font-size: 0.78rem;
 }
 
+.google-auth-row {
+  margin-top: 0.4rem;
+}
+
+.google-auth-btn {
+  background: var(--tile-bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
 .calendar-body {
   overflow: hidden;
   max-height: 0;

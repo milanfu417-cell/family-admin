@@ -29,9 +29,27 @@ const CALENDAR_EVENT_WEBHOOK_URL = "https://hook.eu1.make.com/rh5fp1wrqsdxkawkt4
 const CALENDAR_SHEET_CSV_URL =
   "https://docs.google.com/spreadsheets/d/11Wbdtl829Fs0lkWyuQUnIaq07UD01A_TD_fwxw016sg/export?format=csv&gid=0";
 
+// ---------- Direct Google Calendar API (replaces the Sheet/webhook flow
+// above once configured) ----------
+// Get GOOGLE_OAUTH_CLIENT_ID from Google Cloud Console: APIs & Services >
+// Credentials > Create Credentials > OAuth client ID > Web application,
+// with this site's origin (e.g. https://yourname.github.io) added under
+// Authorized JavaScript origins. Leave it blank to keep using the Sheet
+// CSV read / Make.com webhook write flow above exactly as-is — this
+// feature does nothing at all until a Client ID is set, so it's always
+// safe to leave unconfigured.
+const GOOGLE_OAUTH_CLIENT_ID = "";
+
+// "primary" is your main Google Calendar. Use a specific calendar's ID
+// (looks like xxxx@group.calendar.google.com, found in that calendar's
+// Settings > Integrate calendar) if the family calendar is a secondary one.
+const GOOGLE_CALENDAR_ID = "primary";
+
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v19";
+const SW_VERSION = "v20";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -129,7 +147,9 @@ function setupDeleteDelegation() {
     const button = event.target.closest("[data-delete-id]");
     if (!button) return;
     const id = button.dataset.deleteId;
-    if (id.startsWith("sheet:")) {
+    if (id.startsWith("google:")) {
+      deleteGoogleCalendarEvent(id);
+    } else if (id.startsWith("sheet:")) {
       dismissSyncedEvent(id);
     } else {
       deleteEntry(id);
@@ -281,6 +301,39 @@ function setupEventForm() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    // Signed into Google: create the event directly via the Calendar API.
+    // Google is the source of truth here, so skip local storage entirely
+    // and just re-fetch afterward — no separate "sheet:"/local dedup needed.
+    if (googleAccessToken) {
+      const title = document.getElementById("sheet-event-title").value.trim();
+      if (!title) return;
+
+      const startTime = document.getElementById("sheet-event-time").value || null;
+      const entry = {
+        title,
+        date: document.getElementById("sheet-event-date").value || null,
+        time: startTime,
+        endTime: startTime ? computeEndTime(startTime) : null,
+        notes: document.getElementById("sheet-event-notes").value.trim() || null,
+      };
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Syncing…";
+      statusEl.textContent = "";
+
+      try {
+        await createGoogleCalendarEvent(entry);
+        closeSheet();
+        showToast("Event added to Google Calendar ✓");
+        loadCalendarEvents();
+      } catch {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Retry Sync";
+        statusEl.textContent = "Couldn't reach Google Calendar — try again.";
+      }
+      return;
+    }
+
     // Build + save locally only on the first attempt; a retry after a
     // failed sync reuses the same pending entry instead of duplicating it.
     if (!pendingEventEntry) {
@@ -336,6 +389,191 @@ function setupEventForm() {
       statusEl.textContent = "Saved locally — couldn't reach Make.com.";
     }
   });
+}
+
+// ---------- Direct Google Calendar API auth ----------
+
+let googleAccessToken = null;
+let googleTokenClient = null;
+
+function updateGoogleSignInUI() {
+  const signInBtn = document.getElementById("google-sign-in");
+  const signOutBtn = document.getElementById("google-sign-out");
+  if (!signInBtn || !signOutBtn) return;
+
+  const configured = !!GOOGLE_OAUTH_CLIENT_ID;
+  signInBtn.classList.toggle("hidden", !configured || !!googleAccessToken);
+  signOutBtn.classList.toggle("hidden", !configured || !googleAccessToken);
+}
+
+function handleGoogleSignIn() {
+  if (!googleTokenClient) return;
+  googleTokenClient.requestAccessToken();
+}
+
+function handleGoogleSignOut() {
+  if (googleAccessToken && window.google?.accounts?.oauth2) {
+    google.accounts.oauth2.revoke(googleAccessToken, () => {});
+  }
+  googleAccessToken = null;
+  updateGoogleSignInUI();
+  loadCalendarEvents();
+}
+
+function initGoogleAuth() {
+  updateGoogleSignInUI();
+  document.getElementById("google-sign-in").addEventListener("click", handleGoogleSignIn);
+  document.getElementById("google-sign-out").addEventListener("click", handleGoogleSignOut);
+
+  if (!GOOGLE_OAUTH_CLIENT_ID) return; // feature not configured — stays fully inactive
+
+  const trySetup = () => {
+    if (!window.google?.accounts?.oauth2) {
+      setTimeout(trySetup, 200);
+      return;
+    }
+    googleTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_OAUTH_CLIENT_ID,
+      scope: GOOGLE_CALENDAR_SCOPE,
+      callback: (response) => {
+        if (response.error) {
+          showToast("Google sign-in failed");
+          return;
+        }
+        googleAccessToken = response.access_token;
+        updateGoogleSignInUI();
+        loadCalendarEvents();
+      },
+    });
+  };
+
+  trySetup();
+}
+
+function getLocalTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+function combineDateTime(date, time) {
+  return `${date}T${time}:00`;
+}
+
+function formatTimeFromDate(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+async function createGoogleCalendarEvent(entry) {
+  const timeZone = getLocalTimeZone();
+  const body = entry.time
+    ? {
+        summary: entry.title,
+        description: entry.notes || undefined,
+        start: { dateTime: combineDateTime(entry.date, entry.time), timeZone },
+        end: { dateTime: combineDateTime(entry.date, entry.endTime || computeEndTime(entry.time)), timeZone },
+      }
+    : {
+        summary: entry.title,
+        description: entry.notes || undefined,
+        start: { date: entry.date },
+        end: { date: entry.date },
+      };
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${googleAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!response.ok) throw new Error(`Calendar API responded ${response.status}`);
+  return response.json();
+}
+
+async function deleteGoogleCalendarEvent(id) {
+  const eventId = id.slice("google:".length);
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${googleAccessToken}` },
+      }
+    );
+    // 410 Gone means it was already deleted — treat as success.
+    if (!response.ok && response.status !== 410) throw new Error(`Calendar API responded ${response.status}`);
+    showToast("Event deleted from Google Calendar ✓");
+    loadCalendarEvents();
+  } catch {
+    showToast("Couldn't delete — check your connection");
+  }
+}
+
+function mapGoogleEventToLocal(item) {
+  const start = item.start || {};
+  const end = item.end || {};
+  const isAllDay = !!start.date && !start.dateTime;
+
+  let date = null;
+  let time = null;
+  let endTime = null;
+
+  if (isAllDay) {
+    date = start.date;
+  } else if (start.dateTime) {
+    const startDate = new Date(start.dateTime);
+    date = formatDateKey(startDate);
+    time = formatTimeFromDate(startDate);
+    if (end.dateTime) endTime = formatTimeFromDate(new Date(end.dateTime));
+  }
+
+  return {
+    id: `google:${item.id}`,
+    title: cleanEventTitle(item.summary || "(untitled)"),
+    date,
+    time,
+    endTime,
+    notes: item.description || null,
+    local: false,
+  };
+}
+
+async function loadCalendarEventsFromGoogleApi() {
+  try {
+    const timeMin = new Date();
+    timeMin.setMonth(timeMin.getMonth() - 2);
+    const params = new URLSearchParams({
+      singleEvents: "true",
+      orderBy: "startTime",
+      timeMin: timeMin.toISOString(),
+      maxResults: "250",
+    });
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${googleAccessToken}` } }
+    );
+
+    if (response.status === 401) {
+      // Token expired or revoked — drop back to signed-out state.
+      googleAccessToken = null;
+      updateGoogleSignInUI();
+      throw new Error("Google auth expired");
+    }
+    if (!response.ok) throw new Error(`Calendar API responded ${response.status}`);
+
+    const data = await response.json();
+    remoteCalendarData = {
+      lastSynced: new Date().toISOString(),
+      events: (data.items || []).map(mapGoogleEventToLocal),
+    };
+  } catch {
+    remoteCalendarData = { lastSynced: null, events: [] };
+  }
+  renderCalendar();
 }
 
 // ---------- Calendar Sync tile ----------
@@ -715,6 +953,10 @@ function parseSheetEvents(csvText) {
 }
 
 async function loadCalendarEvents() {
+  if (googleAccessToken) {
+    return loadCalendarEventsFromGoogleApi();
+  }
+
   if (!CALENDAR_SHEET_CSV_URL) {
     remoteCalendarData = { lastSynced: null, events: [] };
     renderCalendar();
@@ -806,6 +1048,7 @@ function registerServiceWorker() {
 }
 
 ensureSeeded();
+initGoogleAuth();
 setupFab();
 setupEventForm();
 setupInlineAdd("chore-add-toggle", "chore-add-form", "chore-add-input", "chore", renderChores);

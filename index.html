@@ -14,7 +14,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Admin" />
 
-  <link rel="stylesheet" href="style.css?v=19" />
+  <link rel="stylesheet" href="style.css?v=20" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -30,6 +31,10 @@
           <span class="tile-collapse-chevron" aria-hidden="true">⌄</span>
         </button>
         <p class="sync-meta" id="calendar-sync-meta">Not connected yet.</p>
+        <div class="google-auth-row">
+          <button type="button" class="google-auth-btn hidden" id="google-sign-in">Sign in with Google</button>
+          <button type="button" class="google-auth-btn hidden" id="google-sign-out">Sign out of Google</button>
+        </div>
       </div>
 
       <div class="calendar-body" id="calendar-body">
@@ -129,6 +134,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=19"></script>
+  <script src="script.js?v=20"></script>
 </body>
 </html>
