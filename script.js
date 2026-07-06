@@ -13,7 +13,7 @@ const MAKE_WEBHOOK_URL = "";
 // Calendar Event" submission POSTs { title, date, time, notes } here so
 // Make.com can file it into Google Calendar. Leave blank to skip syncing
 // and just save the event locally.
-const CALENDAR_EVENT_WEBHOOK_URL = "https://hook.eu1.make.com/rh5fp1wrqsdxkawkt4lwqec74mc8rs1g";
+const CALENDAR_EVENT_WEBHOOK_URL = "";
 
 // Public CSV export link for the Google Sheet Make.com writes your synced
 // Google Calendar events into. In the Sheet: Share > "Anyone with the link"
@@ -26,8 +26,7 @@ const CALENDAR_EVENT_WEBHOOK_URL = "https://hook.eu1.make.com/rh5fp1wrqsdxkawkt4
 // gid=0 assumes the calendar data is on the sheet's first tab. If it's on a
 // different tab, open that tab in the browser and copy the #gid=NNNN number
 // from the URL bar into the gid= param below.
-const CALENDAR_SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/11Wbdtl829Fs0lkWyuQUnIaq07UD01A_TD_fwxw016sg/export?format=csv&gid=0";
+const CALENDAR_SHEET_CSV_URL = "";
 
 // ---------- Direct Google Calendar API (replaces the Sheet/webhook flow
 // above once configured) ----------
@@ -50,7 +49,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v24";
+const SW_VERSION = "v25";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
