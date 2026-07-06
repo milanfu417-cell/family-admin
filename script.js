@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v16";
+const SW_VERSION = "v17";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -287,12 +287,15 @@ function setupEventForm() {
       const title = document.getElementById("sheet-event-title").value.trim();
       if (!title) return;
 
+      const startTime = document.getElementById("sheet-event-time").value || null;
+
       pendingEventEntry = {
         id: generateId(),
         type: "event",
         title,
         date: document.getElementById("sheet-event-date").value || null,
-        time: document.getElementById("sheet-event-time").value || null,
+        time: startTime,
+        endTime: startTime ? computeEndTime(startTime) : null,
         notes: document.getElementById("sheet-event-notes").value.trim() || null,
         createdAt: new Date().toISOString(),
       };
@@ -374,7 +377,14 @@ function cleanEventTitle(title) {
 function getVisibleEvents() {
   const localEvents = loadEntries()
     .filter((entry) => entry.type === "event")
-    .map((entry) => ({ id: entry.id, title: entry.title, date: entry.date, time: entry.time, local: true }));
+    .map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      date: entry.date,
+      time: entry.time,
+      endTime: entry.endTime || null,
+      local: true,
+    }));
 
   const dismissedIds = loadDismissedSyncIds();
   const remoteEvents = (remoteCalendarData.events || [])
@@ -410,9 +420,10 @@ function renderSyncMeta(eventCount) {
 
 function renderEventChip(event) {
   const title = cleanEventTitle(event.title);
+  const timeLabel = event.time ? (event.endTime ? `${event.time}–${event.endTime}` : event.time) : "";
   return `
     <div class="calendar-event"${event.notes ? ` title="${escapeHtml(event.notes)}"` : ""}>
-      <span class="calendar-event-title">${escapeHtml(title)}${event.time ? ` · ${escapeHtml(event.time)}` : ""}</span>
+      <span class="calendar-event-title">${escapeHtml(title)}${timeLabel ? ` · ${escapeHtml(timeLabel)}` : ""}</span>
       <button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>
     </div>
   `;
