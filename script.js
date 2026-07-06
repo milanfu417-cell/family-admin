@@ -50,7 +50,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v22";
+const SW_VERSION = "v23";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -570,35 +570,54 @@ function mapGoogleEventToLocal(item) {
   };
 }
 
+// Google returns one page (up to maxResults) per request. Recurring events
+// get expanded into individual instances by singleEvents, so a busy calendar
+// can exhaust a single page well before reaching future months — follow
+// nextPageToken until Google says there's nothing left. The 20-page cap
+// (~5000 events) just guards against an unbounded loop; no real family
+// calendar should ever get close to it.
+async function fetchGoogleCalendarPage(timeMin, pageToken) {
+  const params = new URLSearchParams({
+    singleEvents: "true",
+    orderBy: "startTime",
+    timeMin: timeMin.toISOString(),
+    maxResults: "250",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${googleAccessToken}` } }
+  );
+
+  if (response.status === 401) {
+    googleAccessToken = null;
+    clearStoredGoogleToken();
+    updateGoogleSignInUI();
+    throw new Error("Google auth expired");
+  }
+  if (!response.ok) throw new Error(`Calendar API responded ${response.status}`);
+
+  return response.json();
+}
+
 async function loadCalendarEventsFromGoogleApi() {
   try {
     const timeMin = new Date();
     timeMin.setMonth(timeMin.getMonth() - 2);
-    const params = new URLSearchParams({
-      singleEvents: "true",
-      orderBy: "startTime",
-      timeMin: timeMin.toISOString(),
-      maxResults: "250",
-    });
 
-    const response = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events?${params.toString()}`,
-      { headers: { Authorization: `Bearer ${googleAccessToken}` } }
-    );
-
-    if (response.status === 401) {
-      // Token expired or revoked — drop back to signed-out state.
-      googleAccessToken = null;
-      clearStoredGoogleToken();
-      updateGoogleSignInUI();
-      throw new Error("Google auth expired");
+    const items = [];
+    let pageToken;
+    for (let page = 0; page < 20; page++) {
+      const data = await fetchGoogleCalendarPage(timeMin, pageToken);
+      items.push(...(data.items || []));
+      pageToken = data.nextPageToken;
+      if (!pageToken) break;
     }
-    if (!response.ok) throw new Error(`Calendar API responded ${response.status}`);
 
-    const data = await response.json();
     remoteCalendarData = {
       lastSynced: new Date().toISOString(),
-      events: (data.items || []).map(mapGoogleEventToLocal),
+      events: items.map(mapGoogleEventToLocal),
     };
   } catch {
     remoteCalendarData = { lastSynced: null, events: [] };
