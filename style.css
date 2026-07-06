@@ -310,11 +310,29 @@ body {
   background: var(--tile-bg-alt);
   border: 1px solid var(--border);
   border-radius: 6px;
-  min-height: 46px;
+  min-height: 40px;
   padding: 2px;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 2px;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+.calendar-day:disabled {
+  opacity: 1;
+}
+
+.calendar-day.has-events {
+  cursor: pointer;
+}
+
+.calendar-day.has-events:hover,
+.calendar-day.has-events:focus-visible {
+  border-color: var(--accent);
 }
 
 .calendar-day-outside {
@@ -328,8 +346,7 @@ body {
 }
 
 .calendar-day-number {
-  align-self: flex-end;
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--muted);
 }
@@ -338,41 +355,57 @@ body {
   color: var(--accent);
 }
 
-.calendar-day-events {
-  min-width: 0;
+.calendar-day-count {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  min-width: 1.1rem;
+  height: 1.1rem;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
 }
 
-.calendar-event {
-  min-width: 0;
+/* ---------- Calendar day view (zoomed-in single day) ---------- */
+
+.day-view-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.day-view-row {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.day-view-row:last-child {
+  border-bottom: none;
+}
+
+.day-view-row-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2px;
-  background: var(--accent);
-  color: var(--accent-text);
-  border-radius: 4px;
-  padding: 1px 3px;
-  font-size: 0.56rem;
-  line-height: 1.15;
+  gap: 0.5rem;
 }
 
-.calendar-event-title {
-  min-width: 0;
-  overflow-wrap: break-word;
+.day-view-row-meta {
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
-.calendar-event .delete-btn {
-  background: none;
-  border: none;
-  color: var(--accent-text);
-  cursor: pointer;
-  font-size: 0.55rem;
-  line-height: 1;
-  padding: 0;
-  flex-shrink: 0;
+.day-view-row-notes {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
 }
 
 .calendar-unscheduled {
@@ -584,13 +617,8 @@ body {
   }
 
   .calendar-day {
-    min-height: 84px;
+    min-height: 56px;
     padding: 5px;
-  }
-
-  .calendar-event {
-    font-size: 0.7rem;
-    padding: 2px 4px;
   }
 }
 

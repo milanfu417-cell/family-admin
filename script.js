@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v18";
+const SW_VERSION = "v19";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -345,6 +345,11 @@ let calendarCursor = startOfMonth(new Date());
 let calendarExpanded = false;
 let lastEventCount = 0;
 
+// "month" = compact overview (tap a day to zoom in); "day" = full detail
+// list for one date (tap back to zoom out).
+let calendarViewMode = "month";
+let selectedDayKey = null;
+
 function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -360,6 +365,11 @@ function formatDateKey(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key) {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
 // Some sync sources append a raw date or ISO timestamp to the title (e.g.
@@ -419,17 +429,6 @@ function renderSyncMeta(eventCount) {
   metaEl.textContent = `${statusText} · ${hint}`;
 }
 
-function renderEventChip(event) {
-  const title = cleanEventTitle(event.title);
-  const timeLabel = event.time ? (event.endTime ? `${event.time}–${event.endTime}` : event.time) : "";
-  return `
-    <div class="calendar-event"${event.notes ? ` title="${escapeHtml(event.notes)}"` : ""}>
-      <span class="calendar-event-title">${escapeHtml(title)}${timeLabel ? ` · ${escapeHtml(timeLabel)}` : ""}</span>
-      <button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>
-    </div>
-  `;
-}
-
 function renderMonthGrid(eventsByDate) {
   const grid = document.getElementById("calendar-grid");
   const label = document.getElementById("calendar-month-label");
@@ -452,17 +451,66 @@ function renderMonthGrid(eventsByDate) {
     }
 
     const key = formatDateKey(new Date(year, month, dayNumber));
-    const dayEvents = eventsByDate[key] || [];
+    const count = (eventsByDate[key] || []).length;
 
     html += `
-      <div class="calendar-day${key === todayKey ? " is-today" : ""}">
+      <button
+        type="button"
+        class="calendar-day${key === todayKey ? " is-today" : ""}${count ? " has-events" : ""}"
+        data-day-key="${key}"
+        ${count ? "" : "disabled"}
+      >
         <span class="calendar-day-number">${dayNumber}</span>
-        <div class="calendar-day-events">${dayEvents.map(renderEventChip).join("")}</div>
-      </div>
+        ${count ? `<span class="calendar-day-count">${count}</span>` : ""}
+      </button>
     `;
   }
 
   grid.innerHTML = html;
+}
+
+function renderDayViewRow(event) {
+  const title = cleanEventTitle(event.title);
+  const timeLabel = event.time ? (event.endTime ? `${event.time}–${event.endTime}` : event.time) : "No time set";
+  return `
+    <div class="day-view-row">
+      <div class="day-view-row-main">
+        <span class="entry-row-content">
+          ${event.local ? '<span class="badge-local">local</span>' : ""}
+          <span>${escapeHtml(title)}</span>
+        </span>
+        <button type="button" class="delete-btn" data-delete-id="${escapeHtml(event.id)}" aria-label="Delete ${escapeHtml(title)}">🗑️</button>
+      </div>
+      <div class="day-view-row-meta">${escapeHtml(timeLabel)}</div>
+      ${event.notes ? `<div class="day-view-row-notes">${escapeHtml(event.notes)}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderDayView(dayKey, eventsByDate) {
+  const container = document.getElementById("calendar-day-view");
+  const events = eventsByDate[dayKey] || [];
+  const heading = dateFromKey(dayKey).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  container.innerHTML = `
+    <div class="day-view-header">
+      <button type="button" class="calendar-nav-btn" id="calendar-day-back" aria-label="Back to month">‹</button>
+      <span>${escapeHtml(heading)}</span>
+    </div>
+    <div class="day-view-list">
+      ${events.length ? events.map(renderDayViewRow).join("") : '<p class="tile-empty">No events on this day.</p>'}
+    </div>
+  `;
+
+  document.getElementById("calendar-day-back").addEventListener("click", () => {
+    calendarViewMode = "month";
+    selectedDayKey = null;
+    renderCalendar();
+  });
 }
 
 function renderUnscheduled(events) {
@@ -505,6 +553,15 @@ function renderCalendar() {
   renderMonthGrid(eventsByDate);
   renderUnscheduled(unscheduled);
   renderSyncMeta(events.length);
+
+  const isDayMode = calendarViewMode === "day" && selectedDayKey;
+  document.getElementById("calendar-header").classList.toggle("hidden", isDayMode);
+  document.getElementById("calendar-weekdays").classList.toggle("hidden", isDayMode);
+  document.getElementById("calendar-grid").classList.toggle("hidden", isDayMode);
+  document.getElementById("calendar-unscheduled").classList.toggle("hidden", isDayMode);
+  document.getElementById("calendar-day-view").classList.toggle("hidden", !isDayMode);
+  if (isDayMode) renderDayView(selectedDayKey, eventsByDate);
+
   refreshCalendarBodyHeight();
 }
 
@@ -708,10 +765,22 @@ function setupCalendarAutoRefresh() {
 function setupCalendarNav() {
   document.getElementById("cal-prev").addEventListener("click", () => {
     calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+    calendarViewMode = "month";
     renderCalendar();
   });
   document.getElementById("cal-next").addEventListener("click", () => {
     calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+    calendarViewMode = "month";
+    renderCalendar();
+  });
+}
+
+function setupCalendarDayClick() {
+  document.getElementById("calendar-grid").addEventListener("click", (event) => {
+    const button = event.target.closest(".calendar-day.has-events");
+    if (!button) return;
+    selectedDayKey = button.dataset.dayKey;
+    calendarViewMode = "day";
     renderCalendar();
   });
 }
@@ -744,6 +813,7 @@ setupInlineAdd("shopping-add-toggle", "shopping-add-form", "shopping-add-input",
 setupInlineAdd("meal-add-toggle", "meal-add-form", "meal-add-input", "meal", renderMeals);
 setupInlineAdd("budget-add-toggle", "budget-add-form", "budget-add-input", "budget", renderBudget);
 setupCalendarNav();
+setupCalendarDayClick();
 setupCalendarToggle();
 setupDeleteDelegation();
 renderChores();

@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Family Admin" />
 
-  <link rel="stylesheet" href="style.css?v=18" />
+  <link rel="stylesheet" href="style.css?v=19" />
 </head>
 <body>
   <header class="app-header">
@@ -33,16 +33,17 @@
       </div>
 
       <div class="calendar-body" id="calendar-body">
-        <div class="calendar-header">
+        <div class="calendar-header" id="calendar-header">
           <button type="button" class="calendar-nav-btn" id="cal-prev" aria-label="Previous month">‹</button>
           <span id="calendar-month-label"></span>
           <button type="button" class="calendar-nav-btn" id="cal-next" aria-label="Next month">›</button>
         </div>
 
-        <div class="calendar-weekdays">
+        <div class="calendar-weekdays" id="calendar-weekdays">
           <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
         </div>
         <div class="calendar-grid" id="calendar-grid"></div>
+        <div class="calendar-day-view hidden" id="calendar-day-view"></div>
 
         <div class="calendar-unscheduled" id="calendar-unscheduled"></div>
       </div>
@@ -128,6 +129,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=18"></script>
+  <script src="script.js?v=19"></script>
 </body>
 </html>
