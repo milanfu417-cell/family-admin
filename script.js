@@ -50,7 +50,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v23";
+const SW_VERSION = "v24";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -619,8 +619,17 @@ async function loadCalendarEventsFromGoogleApi() {
       lastSynced: new Date().toISOString(),
       events: items.map(mapGoogleEventToLocal),
     };
-  } catch {
-    remoteCalendarData = { lastSynced: null, events: [] };
+  } catch (err) {
+    console.error("Google Calendar sync failed:", err);
+    // A 401 above already cleared googleAccessToken (real sign-out) — wipe
+    // the view in that case. Anything else is a transient hiccup (network
+    // blip, rate limit), so keep showing the last data that did load
+    // instead of blanking the whole calendar over one failed refresh.
+    if (!googleAccessToken) {
+      remoteCalendarData = { lastSynced: null, events: [] };
+    } else {
+      showToast(`Sync failed: ${err.message}`);
+    }
   }
   renderCalendar();
 }
