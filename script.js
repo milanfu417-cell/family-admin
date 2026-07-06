@@ -38,7 +38,8 @@ const CALENDAR_SHEET_CSV_URL =
 // CSV read / Make.com webhook write flow above exactly as-is — this
 // feature does nothing at all until a Client ID is set, so it's always
 // safe to leave unconfigured.
-const GOOGLE_OAUTH_CLIENT_ID = "";
+const GOOGLE_OAUTH_CLIENT_ID =
+  "348927170919-rca6m1vh04emkv48vaggipbpjn77sg3r.apps.googleusercontent.com";
 
 // "primary" is your main Google Calendar. Use a specific calendar's ID
 // (looks like xxxx@group.calendar.google.com, found in that calendar's
@@ -49,7 +50,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v20";
+const SW_VERSION = "v21";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
