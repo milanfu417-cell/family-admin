@@ -31,7 +31,7 @@ const CALENDAR_SHEET_CSV_URL =
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v17";
+const SW_VERSION = "v18";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -394,6 +394,7 @@ function getVisibleEvents() {
       title: cleanEventTitle(event.title),
       date: event.date || null,
       time: event.time || null,
+      endTime: event.endTime || null,
       notes: event.notes || null,
       local: false,
     }));
@@ -631,6 +632,7 @@ function parseSheetEvents(csvText) {
 
   const dateIndex = headers.indexOf("date");
   const timeIndex = headers.indexOf("time");
+  const endTimeIndex = headers.indexOf("end time");
   const notesIndex = headers.indexOf("notes");
 
   return rows
@@ -640,6 +642,7 @@ function parseSheetEvents(csvText) {
       const title = cleanEventTitle(cells[titleIndex].trim());
       const date = dateIndex >= 0 ? normalizeSheetDate(cells[dateIndex]) : null;
       const time = timeIndex >= 0 ? normalizeSheetTime(cells[timeIndex]) : null;
+      const endTime = endTimeIndex >= 0 ? normalizeSheetTime(cells[endTimeIndex]) : null;
       return {
         // Content-derived (not row-index-based) so a dismissed event stays
         // dismissed across re-syncs even if the Sheet's row order shifts.
@@ -647,6 +650,7 @@ function parseSheetEvents(csvText) {
         title,
         date,
         time,
+        endTime,
         notes: notesIndex >= 0 ? (cells[notesIndex] || "").trim() : "",
         local: false,
       };
