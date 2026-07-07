@@ -51,7 +51,7 @@ const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 // Bump this whenever sw.js changes so phones re-fetch it instead of serving
 // a stale cached copy (must match CACHE_NAME's version in sw.js).
-const SW_VERSION = "v27";
+const SW_VERSION = "v28";
 
 const ENTRIES_STORAGE_KEY = "familyAdminQuickAdds";
 const SEED_FLAG_KEY = "familyAdminSeeded";
@@ -577,11 +577,12 @@ function mapGoogleEventToLocal(item) {
 // nextPageToken until Google says there's nothing left. The 20-page cap
 // (~5000 events) just guards against an unbounded loop; no real family
 // calendar should ever get close to it.
-async function fetchGoogleCalendarPage(timeMin, pageToken) {
+async function fetchGoogleCalendarPage(timeMin, timeMax, pageToken) {
   const params = new URLSearchParams({
     singleEvents: "true",
     orderBy: "startTime",
     timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
     maxResults: "250",
   });
   if (pageToken) params.set("pageToken", pageToken);
@@ -604,13 +605,19 @@ async function fetchGoogleCalendarPage(timeMin, pageToken) {
 
 async function loadCalendarEventsFromGoogleApi() {
   try {
+    // Bounded to a year-ish window (rather than an open-ended future) so a
+    // calendar full of daily/weekly recurring events with no end date
+    // doesn't force paginating through thousands of far-future instances
+    // on every sync — nobody needs to see 2030 on first load.
     const timeMin = new Date();
-    timeMin.setMonth(timeMin.getMonth() - 2);
+    timeMin.setMonth(timeMin.getMonth() - 1);
+    const timeMax = new Date();
+    timeMax.setMonth(timeMax.getMonth() + 6);
 
     const items = [];
     let pageToken;
     for (let page = 0; page < 20; page++) {
-      const data = await fetchGoogleCalendarPage(timeMin, pageToken);
+      const data = await fetchGoogleCalendarPage(timeMin, timeMax, pageToken);
       items.push(...(data.items || []));
       pageToken = data.nextPageToken;
       if (!pageToken) break;
